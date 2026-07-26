@@ -37,6 +37,10 @@ Demo mode keeps everything in one browser, so the girls' tablets wouldn't see
 what you approve. To sync across devices you need a backend. This uses
 **Supabase** — free tier, no credit card.
 
+> 📖 **Never used Supabase?** [**SETUP.md**](SETUP.md) is a literal,
+> click-by-click walkthrough of everything below, written assuming no prior
+> knowledge. The summary here is for people who already know the tools.
+
 ### 1. Create the project
 
 1. Sign up at [supabase.com](https://supabase.com) and create a project.
@@ -258,6 +262,7 @@ supabase/
   schema.sql            tables, RLS, functions  ← run this first
   seed.sql              sample kids and chores  ← optional
   notifications.sql     trigger for push/email  ← optional
+  reset.sql             erase everything and start over
   functions/notify/     Edge Function
   test/                 database tests
 test/                   browser tests
