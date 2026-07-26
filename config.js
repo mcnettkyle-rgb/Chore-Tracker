@@ -12,11 +12,11 @@ export const CONFIG = {
   //
   // 'supabase' — real cross-device sync. Tablets and your phone all see the
   //              same data. Requires the two values below.
-  mode: 'local',
+  mode: 'supabase',
 
   // From your Supabase project: Settings → API.
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  supabaseUrl: 'https://oktwmyortskjavpsfnvq.supabase.co/rest/v1/',
+  supabaseAnonKey: 'sb_publishable_B8QJsauwv0BzISrhf5Tctw_5O8Q94SO',
 
   // Only needed if you turn on phone notifications. This is the PUBLIC half
   // of your VAPID key pair — see README, "Push notifications".
