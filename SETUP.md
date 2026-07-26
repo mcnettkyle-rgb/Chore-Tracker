@@ -157,21 +157,36 @@ all protected, is a correct result.
 
 ## Part 3 — Connect the app to it
 
-**3.1** In the Supabase sidebar, click the **gear icon** (Project Settings) at
-the bottom, then **API** in the menu that appears.
+You need two values out of Supabase and into `config.js`.
 
-**3.2** You need two values from this page.
+**3.1 — Find the settings page.** In the Supabase sidebar, click the **gear
+icon** (Project Settings), usually at the bottom. Then look for a page called
+**API**, **API Keys**, or **Data API** — Supabase has reorganised this menu
+more than once, so check each of those names.
 
-**The first is the Project URL.** It looks like:
+**3.2 — Value one: the Project URL.** It looks like:
 
 ```
 https://abcdefghijklmnop.supabase.co
 ```
 
-**The second is the public API key.** This is the one place the labels have
-changed over time, so go by meaning rather than by name. You want the key
-described as **public**, **publishable**, or **anon** — the one Supabase says is
-safe to use in a browser or mobile app. It's a long string.
+> 💡 **Can't find it?** You can read it off your browser's address bar. While
+> you're in the project dashboard the address is
+> `https://supabase.com/dashboard/project/abcdefghijklmnop` — that last chunk is
+> your project reference, and your URL is that same chunk plus `.supabase.co`.
+
+**3.3 — Value two: the public API key.** This is the one place the labels have
+changed over time, so identify it by *meaning*, not by name. You want the key
+described as **public**, **publishable**, or **anon** — whichever one Supabase
+says is safe to use in a browser or mobile app.
+
+It'll be a long string in one of two formats, depending on how new your project
+is. Both work:
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIs...   ← older style
+sb_publishable_AbCdEf123456...                                      ← newer style
+```
 
 > 🚫 **Do not use the key marked `service_role` or `secret`.** That one bypasses
 > every security rule in the database. It belongs on a server, never in a web
@@ -182,7 +197,22 @@ safe to use in a browser or mobile app. It's a long string.
 > database is protected by rules that live *inside* the database (see
 > [README](README.md#kids-cant-approve-their-own-work)), not by hiding this key.
 
-**3.3** Open `config.js` in this project and fill it in:
+**3.4 — Put them in `config.js`.** Easiest route with no tools installed: open
+the file on GitHub, click the **pencil icon** (top right of the file box), edit
+it in the browser, then scroll down and click **Commit changes**.
+
+You're changing three lines. Before:
+
+```js
+export const CONFIG = {
+  mode: 'local',
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+  vapidPublicKey: '',
+};
+```
+
+After:
 
 ```js
 export const CONFIG = {
@@ -193,17 +223,33 @@ export const CONFIG = {
 };
 ```
 
-Three things to get right:
-- `mode` changes from `'local'` to `'supabase'` — this is the actual switch
-- Keep the quotes around both values
-- No trailing slash on the URL
+Four things to get right:
+- `mode` changes from `'local'` to `'supabase'` — this is the actual switch, and
+  it's the one people forget
+- Keep the straight quotes `'` around both values
+- **No trailing slash** on the URL
+- Leave `vapidPublicKey` empty — that's only for notifications, much later
 
-**3.4** Reload the app.
+**3.5 — Reload the app.**
 
-✅ **You'll know it worked when** Parent → Settings no longer says "Running in
-demo mode" at the bottom, and instead names your Supabase project. Two browser
-windows open side by side will now update each other live — mark a chore done in
-one and watch the other's badge change without a refresh.
+✅ **You'll know it worked when** Parent → Settings stops saying "Running in demo
+mode" at the bottom and names your Supabase project host instead. Open two
+browser windows side by side and it gets more convincing: mark a chore done in
+one and the other's badge changes without a refresh.
+
+### If it says "Couldn't start"
+
+Nine times in ten it's one of these:
+
+| Symptom | Cause |
+|---|---|
+| "Couldn't start" immediately | A typo in the URL, or a trailing `/` on the end |
+| Loads but nothing happens, console shows 401 | You pasted the `service_role`/secret key, or the key is truncated |
+| Still says "demo mode" | `mode` is still `'local'` |
+| `permission denied for table ...` | `schema.sql` didn't finish — re-run it from the top |
+
+The key is long. When copying, use the **copy button** next to it rather than
+selecting by hand, which tends to clip the last characters.
 
 ---
 
@@ -215,17 +261,41 @@ address.
 
 ### If your GitHub repo is public: GitHub Pages
 
-1. In your repo on GitHub, go to **Settings → Pages**.
+1. In your repo on GitHub, click **Settings** (the tab along the top of the
+   repo, not your account settings), then **Pages** in the left sidebar.
 2. Under **Source**, choose **Deploy from a branch**.
-3. Pick your branch and the folder **`/ (root)`**. Click **Save**.
-4. Wait a minute. The page will show your URL, like
-   `https://mcnettkyle-rgb.github.io/chore-tracker/`.
+3. In **Branch**, pick **the branch that actually has the app on it**, and set
+   the folder to **`/ (root)`**. Click **Save**.
+4. Wait a minute or two, then refresh the page. It'll show your address, like
+   `https://yourname.github.io/Your-Repo/`.
+
+> ⚠️ **The branch dropdown is the one that catches people.** It defaults to the
+> repository's default branch, which is not necessarily the branch holding the
+> app. Pick the wrong one and you get a working URL serving a blank page — with
+> no error to tell you why. If your site loads empty, this is almost always the
+> reason.
+>
+> It's worth setting the right branch as your repo default first, under
+> **Settings → General → Default branch**. Then this dropdown, `git clone`, and
+> the repo homepage all do the sensible thing without you thinking about it.
+
+**The URL includes your repo name** (`.github.io/Your-Repo/`, not just
+`.github.io/`). The app is built with relative paths throughout, so it runs
+correctly from that sub-folder — verified, including the service worker.
+
+**Every commit redeploys automatically.** Edit `config.js` on GitHub, commit,
+and the live site picks it up within a minute or two. There's no separate
+publish step.
 
 **Is a public repo a privacy problem?** Less than you'd think. Your daughters'
 names, chores, and balances live in the *database*, not in the repo — the repo
 only contains the sample names `Ava` and `Mia`. The only personal thing in the
 code is your Supabase URL and public key in `config.js`, which are safe to
 publish by design.
+
+`.nojekyll` in the repo root tells GitHub Pages to publish the files exactly as
+they are, rather than running them through its blog engine first. Leave it
+there; it's empty on purpose.
 
 ### If your repo is private
 
