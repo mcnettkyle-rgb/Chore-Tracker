@@ -52,6 +52,14 @@ if pg_isready -h /tmp -p "$PGPORT" -q 2>/dev/null; then
 fi
 rm -f "/tmp/.s.PGSQL.$PGPORT" "/tmp/.s.PGSQL.$PGPORT.lock"
 
+# Static checks first — they need no database and catch the class of bug that
+# only shows up on a real Supabase project (unbounded UPDATEs, search_path).
+if command -v node >/dev/null 2>&1; then
+  echo "==> SQL lint"
+  node "$HERE/lint.mjs"
+  echo
+fi
+
 echo "==> starting throwaway postgres on port $PGPORT"
 rm -rf "$PGDATA"
 mkdir -p "$PGDATA"

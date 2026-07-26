@@ -432,8 +432,15 @@ begin
     raise exception 'PIN must be at least 4 digits.';
   end if;
 
-  update household set parent_pin_hash = crypt(p_new_pin, gen_salt('bf', 10));
-  delete from pin_attempts;
+  -- `where singleton` matches the single household row. Hosts that enable the
+  -- safeupdate extension reject any UPDATE or DELETE without a WHERE clause,
+  -- and silently losing a PIN write is exactly the failure that guard exists
+  -- to prevent -- so every statement below carries a real predicate.
+  update household set parent_pin_hash = crypt(p_new_pin, gen_salt('bf', 10))
+   where singleton;
+
+  -- Changing the PIN clears the lockout counter.
+  delete from pin_attempts where id is not null;
 end;
 $$;
 
@@ -978,7 +985,9 @@ as $$
 declare v_settings jsonb;
 begin
   perform require_parent(p_token);
-  update household set settings = settings || p_patch returning settings into v_settings;
+  update household set settings = settings || p_patch
+   where singleton
+  returning settings into v_settings;
   return v_settings;
 end;
 $$;
@@ -991,7 +1000,7 @@ set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
-  update household set name = p_name;
+  update household set name = p_name where singleton;
 end;
 $$;
 
