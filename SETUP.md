@@ -243,10 +243,23 @@ Nine times in ten it's one of these:
 
 | Symptom | Cause |
 |---|---|
-| "Couldn't start" immediately | A typo in the URL, or a trailing `/` on the end |
-| Loads but nothing happens, console shows 401 | You pasted the `service_role`/secret key, or the key is truncated |
+| **"Invalid path specified in request URL"** | **Your `supabaseUrl` has `/rest/v1/` on the end.** Delete everything after `.supabase.co` — see below. |
+| "Couldn't start" immediately | A typo in the URL |
+| Loads but nothing happens, console shows 401 | You pasted the `service_role`/secret key, or the key got truncated |
 | Still says "demo mode" | `mode` is still `'local'` |
 | `permission denied for table ...` | `schema.sql` didn't finish — re-run it from the top |
+
+**The `/rest/v1/` trap.** The dashboard shows the REST endpoint alongside the
+project URL, and it's the easy one to grab:
+
+```js
+supabaseUrl: 'https://abcdefg.supabase.co/rest/v1/',   // ❌ wrong
+supabaseUrl: 'https://abcdefg.supabase.co',            // ✅ right
+```
+
+The client appends `/rest/v1` itself, so the wrong version requests
+`/rest/v1/rest/v1/...`. The app now trims this for you and logs a warning, but
+fix `config.js` properly so the warning goes away.
 
 The key is long. When copying, use the **copy button** next to it rather than
 selecting by hand, which tends to clip the last characters.

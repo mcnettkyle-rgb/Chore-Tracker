@@ -8,6 +8,32 @@ import { ymd, weekStartFor } from './util.js';
 
 const SUPABASE_ESM = 'https://esm.sh/@supabase/supabase-js@2';
 
+/**
+ * The Supabase dashboard shows several URLs, and the one people reach for is
+ * often an endpoint rather than the project root — the API settings page
+ * displays `https://xxx.supabase.co/rest/v1/`, which is very reasonably
+ * mistaken for "the URL".
+ *
+ * The client appends `/rest/v1/...` itself, so passing the endpoint produces
+ * requests to `/rest/v1/rest/v1/...` and a baffling "Invalid path specified in
+ * request URL". Trim the known endpoint suffixes and any trailing slash, and
+ * say so in the console rather than silently papering over it.
+ */
+export function normalizeSupabaseUrl(raw) {
+  const original = String(raw ?? '').trim();
+  let url = original.replace(/\/+$/, '');
+
+  for (const suffix of ['/rest/v1', '/auth/v1', '/storage/v1', '/graphql/v1', '/realtime/v1', '/functions/v1']) {
+    if (url.toLowerCase().endsWith(suffix)) {
+      url = url.slice(0, -suffix.length);
+      break;
+    }
+  }
+  url = url.replace(/\/+$/, '');
+
+  return { url, changed: url !== original, original };
+}
+
 export class SupabaseAdapter {
   constructor(config) {
     this.mode = 'supabase';
@@ -18,7 +44,22 @@ export class SupabaseAdapter {
 
   async init() {
     const { createClient } = await import(SUPABASE_ESM);
-    this.client = createClient(this.config.supabaseUrl, this.config.supabaseAnonKey, {
+
+    const { url, changed, original } = normalizeSupabaseUrl(this.config.supabaseUrl);
+    if (changed) {
+      console.warn(
+        `[chore-tracker] Trimmed supabaseUrl to "${url}" (you had "${original}").\n` +
+        'Edit config.js to match — it should be just https://YOUR-PROJECT.supabase.co',
+      );
+    }
+    if (!/^https?:\/\/[^/]+$/.test(url)) {
+      throw new Error(
+        `supabaseUrl in config.js doesn't look right: "${original}". ` +
+        'It should be just https://YOUR-PROJECT.supabase.co with nothing after it.',
+      );
+    }
+
+    this.client = createClient(url, this.config.supabaseAnonKey, {
       auth: { persistSession: false },
     });
 

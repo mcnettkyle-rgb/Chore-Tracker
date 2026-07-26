@@ -14,8 +14,19 @@ export const CONFIG = {
   //              same data. Requires the two values below.
   mode: 'local',
 
-  // From your Supabase project: Settings → API.
+  // From your Supabase project: Settings → API (or "API Keys" / "Data API").
+  //
+  // supabaseUrl is the project root and NOTHING else:
+  //     ✅ https://YOUR-PROJECT.supabase.co
+  //     ❌ https://YOUR-PROJECT.supabase.co/rest/v1/    <- an endpoint, not the URL
+  //
+  // The dashboard displays that /rest/v1/ form too, and it's the easy one to
+  // grab. The client adds /rest/v1 itself, so pasting it gives you requests to
+  // /rest/v1/rest/v1/... and the error "Invalid path specified in request URL".
   supabaseUrl: '',
+
+  // The key labelled public / publishable / anon — never the service_role or
+  // secret one. Both formats work: "eyJhbGci..." or "sb_publishable_...".
   supabaseAnonKey: '',
 
   // Only needed if you turn on phone notifications. This is the PUBLIC half

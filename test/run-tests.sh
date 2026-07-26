@@ -36,6 +36,10 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 
+echo "==> config URL handling"
+node "$HERE/url.test.mjs"
+
+echo
 echo "==> approval flow"
 node "$HERE/flow.test.mjs"
 
