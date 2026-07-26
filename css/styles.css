@@ -690,8 +690,11 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.field-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
 .field-row > .field { flex: 1; min-width: 150px; }
+
+/* Stops a lone select stretching the full width of a desktop window. */
+.field--narrow { max-width: 300px; }
 
 .check {
   display: flex;
@@ -910,6 +913,13 @@ dialog::backdrop { background: rgba(20, 17, 14, .45); backdrop-filter: blur(2px)
   .app { padding-left: 12px; padding-right: 12px; }
   .review__actions { flex-direction: column; }
   .pin-keys { grid-template-columns: repeat(3, 68px); }
+}
+
+/* All four parent tabs must fit on a phone. If the last one is off-screen
+   people never find Settings. */
+@media (max-width: 480px) {
+  .tab { padding: 9px 8px; font-size: 13px; }
+  .tab__badge { margin-left: 4px; min-width: 18px; height: 18px; padding: 0 4px; font-size: 11px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -167,7 +167,7 @@ export function renderSettings() {
 
   wrap.append(section('Rules', null,
     el('div', { class: 'field-row' },
-      el('div', { class: 'field' },
+      el('div', { class: 'field field--narrow' },
         el('label', { class: 'field__label' }, 'Week starts on'), weekStart,
         el('div', { class: 'field__hint' }, 'Changing this reshuffles which days chores land on.'),
       ),
