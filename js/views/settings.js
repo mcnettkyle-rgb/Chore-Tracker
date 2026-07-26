@@ -10,6 +10,9 @@ import { pushSupported, pushEnabled, enablePush, disablePush } from '../push.js'
 const COLORS = ['#e11d48', '#7c3aed', '#0891b2', '#059669', '#d97706', '#db2777', '#4f46e5', '#65a30d'];
 const AVATARS = ['🦊', '🐨', '🐼', '🦁', '🐧', '🦄', '🐢', '🐝', '🦉', '🐙', '⭐', '🌈'];
 
+// One-shot guard: the timezone auto-detect must not re-fire on every render.
+let timezoneSynced = false;
+
 async function saveSetting(patch) {
   try {
     await parentAction((token) => db.updateSettings(token, patch));
@@ -207,6 +210,29 @@ export function renderSettings() {
     pushOn.checked = s.notify_push !== false;
     pushOn.addEventListener('change', () => saveSetting({ notify_push: pushOn.checked }));
 
+    // Quiet hours are evaluated server-side in the household's timezone, so
+    // it has to be stored. Detect it once, from the parent's own browser.
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (detected && (!s.timezone || s.timezone === 'UTC') && detected !== 'UTC' && !timezoneSynced) {
+      timezoneSynced = true;
+      parentAction((token) => db.updateSettings(token, { timezone: detected }))
+        .catch(() => { timezoneSynced = false; });
+    }
+
+    const hourSelect = (value, onChange) => {
+      const sel = el('select', { style: { maxWidth: '120px' } });
+      for (let h = 0; h < 24; h++) {
+        const label = new Date(2000, 0, 1, h).toLocaleTimeString(undefined, { hour: 'numeric' });
+        sel.append(el('option', { value: String(h) }, label));
+      }
+      sel.value = String(value);
+      sel.addEventListener('change', () => onChange(Number(sel.value)));
+      return sel;
+    };
+
+    const quietFrom = hourSelect(s.quiet_hours_start ?? 21, (v) => saveSetting({ quiet_hours_start: v }));
+    const quietTo = hourSelect(s.quiet_hours_end ?? 7, (v) => saveSetting({ quiet_hours_end: v }));
+
     const deviceBtn = el('button', { class: 'btn', type: 'button' },
       pushEnabled() ? 'Turn off on this device' : 'Turn on for this device');
     deviceBtn.addEventListener('click', async () => {
@@ -247,6 +273,15 @@ export function renderSettings() {
       ),
       el('div', { class: 'field' },
         el('label', { class: 'field__label' }, 'Send email to'), emailTo),
+      el('div', { class: 'field' },
+        el('label', { class: 'field__label' }, 'Quiet hours (no push)'),
+        el('div', { class: 'spread' },
+          quietFrom, el('span', { class: 'muted' }, 'to'), quietTo,
+        ),
+        el('div', { class: 'field__hint' },
+          `Push is held back during these hours; email still goes out. Times are in ${s.timezone || 'UTC'}. ` +
+          'Set both to the same hour to disable.'),
+      ),
     );
   }
 

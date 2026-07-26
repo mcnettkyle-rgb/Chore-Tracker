@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   notify_email_to: '',
   quiet_hours_start: 21,
   quiet_hours_end: 7,
+  timezone: 'UTC',
   parent_session_minutes: 240,
 };
 

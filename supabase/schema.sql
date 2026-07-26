@@ -58,6 +58,9 @@ create table if not exists household (
                     'notify_email_to',         '',
                     'quiet_hours_start',       21,
                     'quiet_hours_end',         7,
+                    -- Set automatically from the parent's browser the first
+                    -- time Settings is opened; quiet hours are evaluated in it.
+                    'timezone',                'UTC',
                     'parent_session_minutes',  240
                   ),
   created_at      timestamptz not null default now()
