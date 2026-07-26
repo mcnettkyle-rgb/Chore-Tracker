@@ -8,6 +8,11 @@ assuming you've never used Supabase or anything like it.
 You do not need to install anything, use a terminal, or understand databases.
 You will copy two files' contents into a web page and paste two values back.
 
+> **You can do all of this in a web browser.** Git, terminals and cloning are
+> not required — GitHub can show you file contents and let you edit files
+> directly on its website. See [Doing this without a terminal](#doing-this-without-a-terminal)
+> at the bottom if you'd rather not install anything.
+
 ---
 
 ## What you're about to do, in plain terms
@@ -256,6 +261,51 @@ the parent screen; this part is only about making your phone buzz.
 
 It needs a terminal and about 15 minutes. Full instructions are in
 [README → Phone notifications](README.md#phone-notifications-optional).
+
+---
+
+## Doing this without a terminal
+
+If you've never used Git, skip it. Everything above can be done from
+github.com in a browser.
+
+### Getting the contents of a file to paste into Supabase
+
+Every file has a **Raw** button on GitHub, which shows it as plain text with no
+formatting or line numbers. That's the version you want to copy.
+
+1. Open the file on GitHub and click **Raw** (top right of the file view).
+2. `Ctrl+A` then `Ctrl+C` (`Cmd` on a Mac) to select and copy all of it.
+3. Paste into the Supabase SQL Editor.
+
+That's Part 2 done, with no clone.
+
+### Editing config.js (Part 3)
+
+1. Open `config.js` on GitHub.
+2. Click the **pencil icon** (top right) — "Edit this file".
+3. Change `mode` to `'supabase'` and paste in your URL and key.
+4. Scroll down, click **Commit changes**.
+
+GitHub saves it straight into the repo. If you've set up GitHub Pages, the live
+site updates by itself within a minute or two.
+
+### When you'd actually want a terminal
+
+Only if you want to run the app on your own computer before publishing it, or
+run the test suites. Neither is needed to get this working on the tablets.
+
+If you do want to: install [Git](https://git-scm.com/downloads) (it is **not**
+built into Windows), then open **Command Prompt** on Windows or **Terminal** on
+a Mac. Note that this repo's default branch is not the one with the app on it,
+so the branch name is required:
+
+```
+git clone -b BRANCH-NAME https://github.com/YOUR-NAME/YOUR-REPO.git
+```
+
+All on one line. Multi-line commands written with a `\` at the end of each line
+are a Mac/Linux convention and will fail in Windows Command Prompt.
 
 ---
 
