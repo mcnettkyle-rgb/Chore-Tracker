@@ -75,11 +75,13 @@ That said, here's what each one is and what I'd pick:
 |---|---|---|
 | **Enable Data API** | ✅ **On** — required | This is the web API the app talks to. Without it there's nothing to connect to. |
 | **Automatically expose new tables** | Either — **off is tidier** | Grants the API roles access to every new table automatically. `schema.sql` revokes all of it and grants back exactly read access on exactly the six tables that need it, so the end result is the same either way. Off is the better habit. |
-| **Enable automatic RLS** | ✅ **On** | Turns on row-level security for any new table. `schema.sql` already does this for every table it creates, so this changes nothing today — it's a safety net against a future table being added without protection. Free insurance. |
+| **Enable automatic RLS** | Either — **on is tidier** | Turns on row-level security for any new table. `schema.sql` already does this for all twelve tables it creates, so it changes nothing for this app. It's a safety net against some *future* table being added without protection. |
 
-Short version: **leave "Enable Data API" ticked, tick "Enable automatic RLS",
-and untick "Automatically expose new tables"** if you want the tightest default.
-Any combination with the Data API on will work.
+Short version: **the only one that has to be on is "Enable Data API."** The
+other two don't change how this app behaves — the SQL sets its own permissions
+and its own row-level security rather than depending on project defaults. Tick
+them the tidy way if you like, but if you already created the project with
+different settings, **there is nothing to redo.**
 
 **1.5** Click **Create new project**, then wait. It takes 1–3 minutes and shows
 a progress spinner. Go make a coffee.
@@ -134,6 +136,22 @@ select
 
 With the seed data you should see something like `2 | 10 | 48`. Without it,
 `0 | 0 | 0` — also fine, it just means you'll add your own chores in the app.
+
+✅ **Check your security is on.** This is the one worth eyeballing, because it's
+what stops a kid approving their own chores:
+
+```sql
+select tablename as table_name,
+       case when rowsecurity then 'protected' else '*** NOT PROTECTED ***' end
+         as row_level_security
+  from pg_tables
+ where schemaname = 'public'
+ order by rowsecurity, tablename;
+```
+
+Every row must say `protected`. The query deliberately sorts unprotected tables
+to the top, so if anything is wrong it's the first thing you see. Ten rows,
+all protected, is a correct result.
 
 ---
 
