@@ -230,7 +230,31 @@ create or replace view household_public as
          (parent_pin_hash is not null) as pin_is_set
   from household;
 
-revoke all on household, pin_attempts, parent_sessions, push_subscriptions from anon, authenticated;
+-- ---------------------------------------------------------------------
+-- Table privileges, stated explicitly.
+--
+-- Supabase projects have a setting called "Automatically expose new tables",
+-- which grants the API roles full privileges on anything created in the public
+-- schema. Rather than depend on how that switch happens to be set, revoke
+-- everything and hand back exactly SELECT. The app then behaves identically
+-- either way, and writes are blocked twice over: no policy AND no grant.
+--
+-- Nothing here is needed for the app to *write*. Every write runs through a
+-- SECURITY DEFINER function, which executes as the owner and does not consult
+-- these grants at all.
+-- ---------------------------------------------------------------------
+revoke all on children, chores, rotation_groups, assignments,
+               chore_instances, ledger_entries
+  from anon, authenticated;
+
+grant select on children, chores, rotation_groups, assignments,
+                chore_instances, ledger_entries
+  to anon, authenticated;
+
+-- Never readable through the API: PIN hash, session tokens, push endpoints.
+revoke all on household, pin_attempts, parent_sessions, push_subscriptions
+  from anon, authenticated;
+
 grant select on household_public to anon, authenticated;
 
 -- =====================================================================

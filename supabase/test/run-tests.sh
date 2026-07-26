@@ -7,8 +7,17 @@
 # project — it spins up its own cluster, runs schema.sql + seed.sql + the
 # tests, and tears down.
 #
-# The local cluster grants `anon` full table privileges exactly the way
-# Supabase does, so the RLS tests are testing RLS and not a missing GRANT.
+# Everything runs TWICE, against two different project configurations:
+#
+#   permissive — "Automatically expose new tables" ON. Supabase grants the API
+#                roles full privileges on every new table, and row-level
+#                security is what holds them back.
+#   strict     — that setting OFF. The API roles get nothing by default, so
+#                schema.sql has to grant its own read access.
+#
+# Running both proves the schema behaves identically either way, rather than
+# silently depending on how one checkbox happened to be set when the project
+# was created.
 
 set -euo pipefail
 
@@ -20,59 +29,85 @@ SUPA="$(dirname "$HERE")"
 
 export PATH="$PGBIN:$PATH"
 
-cleanup() {
-  pg_ctl -D "$PGDATA" stop -m immediate >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
-
-echo "==> starting throwaway postgres on port $PGPORT"
-rm -rf "$PGDATA"
-mkdir -p "$PGDATA"
+# Postgres refuses to run as root, so the server is started via `su postgres`.
+# Stopping it has to go the same way or the shutdown silently fails and the
+# cluster outlives the test run.
 if [ "$(id -u)" = "0" ]; then
-  chown postgres:postgres "$PGDATA"
   RUN="su postgres -c"
 else
   RUN="bash -c"
 fi
+
+cleanup() {
+  $RUN "PATH=$PGBIN:\$PATH pg_ctl -D $PGDATA stop -m immediate" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+# A leftover socket file from a killed run is harmless; a server actually
+# listening is not. Test for a live server, then clear any stale socket.
+if pg_isready -h /tmp -p "$PGPORT" -q 2>/dev/null; then
+  echo "Something is already serving on port $PGPORT — is another test run going?" >&2
+  echo "Stop it, or re-run with PGPORT=55499 ./supabase/test/run-tests.sh" >&2
+  exit 1
+fi
+rm -f "/tmp/.s.PGSQL.$PGPORT" "/tmp/.s.PGSQL.$PGPORT.lock"
+
+echo "==> starting throwaway postgres on port $PGPORT"
+rm -rf "$PGDATA"
+mkdir -p "$PGDATA"
+[ "$(id -u)" = "0" ] && chown postgres:postgres "$PGDATA"
 chmod 700 "$PGDATA"
 
 $RUN "PATH=$PGBIN:\$PATH initdb -D $PGDATA -A trust -U postgres" >/dev/null
 $RUN "PATH=$PGBIN:\$PATH pg_ctl -D $PGDATA -o '-p $PGPORT -k /tmp' -l $PGDATA/server.log start" >/dev/null
 sleep 2
 
-psql -h /tmp -p "$PGPORT" -U postgres -qc "create database chores;"
+# pg_net only exists on Supabase; prelude-net.sql shims it. Strip just the
+# CREATE EXTENSION line so the rest of notifications.sql runs unmodified.
+sed 's/^create extension if not exists pg_net;/-- pg_net shimmed by prelude-net.sql/' \
+  "$SUPA/notifications.sql" > "$PGDATA/notifications.sql"
 
 # Quiet on success (ON_ERROR_STOP + set -e still fail the run), but keep any
-# real error text. "does not exist, skipping" is the expected noise from the
+# real error text. "does not exist, skipping" is expected noise from the
 # idempotent drop-if-exists statements.
 run() {
-  psql -h /tmp -p "$PGPORT" -U postgres -d chores -q -v ON_ERROR_STOP=1 -f "$1" 2>&1 \
+  psql -h /tmp -p "$PGPORT" -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 -f "$1" 2>&1 \
     | grep -vE 'NOTICE:|^$' || true
 }
 
-echo "==> applying schema"
-run "$HERE/prelude.sql"
-run "$HERE/prelude-net.sql"
-run "$SUPA/schema.sql"
-run "$SUPA/seed.sql"
-
 show() {
-  psql -h /tmp -p "$PGPORT" -U postgres -d chores -q -v ON_ERROR_STOP=1 -f "$1" 2>&1 \
+  psql -h /tmp -p "$PGPORT" -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 -f "$1" 2>&1 \
     | sed 's/^psql.*NOTICE:  //; s/^psql.*ERROR:/ERROR:/' \
     | grep -E "PASS|FAIL|ERROR|---"
 }
 
-echo "==> core tests"
-show "$HERE/tests.sql"
+for MODE in permissive strict; do
+  DB="chores_$MODE"
+  case "$MODE" in
+    permissive) PRELUDE="$HERE/prelude.sql" ;;
+    strict)     PRELUDE="$HERE/prelude-strict.sql" ;;
+  esac
 
-# notifications.sql creates pg_net, which only exists on Supabase; the shim in
-# prelude-net.sql provides net.http_post, so drop just that one line.
-echo
-echo "==> notification tests"
-sed 's/^create extension if not exists pg_net;/-- pg_net shimmed by prelude-net.sql/' \
-  "$SUPA/notifications.sql" > "$PGDATA/notifications.sql"
-run "$PGDATA/notifications.sql"
-show "$HERE/notifications.test.sql"
+  echo
+  echo "#####################################################################"
+  echo "# project config: $MODE  (\"expose new tables\" $([ "$MODE" = permissive ] && echo ON || echo OFF))"
+  echo "#####################################################################"
+
+  psql -h /tmp -p "$PGPORT" -U postgres -qc "create database $DB;"
+
+  run "$PRELUDE"
+  run "$HERE/prelude-net.sql"
+  run "$SUPA/schema.sql"
+  run "$SUPA/seed.sql"
+
+  echo "==> core tests"
+  show "$HERE/tests.sql"
+
+  echo
+  echo "==> notification tests"
+  run "$PGDATA/notifications.sql"
+  show "$HERE/notifications.test.sql"
+done
 
 echo
-echo "==> all tests passed"
+echo "==> all tests passed under both project configurations"

@@ -53,6 +53,29 @@ About that database password: **this app never uses it.** It's for connecting to
 the database directly with other tools. Save it in your password manager and
 move on. If you lose it you can reset it later.
 
+**The GitHub field is optional — leave it blank.** It sets up automatic schema
+deployment from a repo, which this project doesn't use. You'll paste the SQL in
+by hand in Part 2, which is simpler and easier to see going wrong.
+
+### The Security checkboxes
+
+The new-project form has three security options. The schema is written so that
+**none of them change how the app behaves** — it sets its own permissions
+explicitly rather than depending on these. The test suite runs the whole thing
+twice, once with these on and once off, to keep that true.
+
+That said, here's what each one is and what I'd pick:
+
+| Option | Set it to | Why |
+|---|---|---|
+| **Enable Data API** | ✅ **On** — required | This is the web API the app talks to. Without it there's nothing to connect to. |
+| **Automatically expose new tables** | Either — **off is tidier** | Grants the API roles access to every new table automatically. `schema.sql` revokes all of it and grants back exactly read access on exactly the six tables that need it, so the end result is the same either way. Off is the better habit. |
+| **Enable automatic RLS** | ✅ **On** | Turns on row-level security for any new table. `schema.sql` already does this for every table it creates, so this changes nothing today — it's a safety net against a future table being added without protection. Free insurance. |
+
+Short version: **leave "Enable Data API" ticked, tick "Enable automatic RLS",
+and untick "Automatically expose new tables"** if you want the tightest default.
+Any combination with the Data API on will work.
+
 **1.5** Click **Create new project**, then wait. It takes 1–3 minutes and shows
 a progress spinner. Go make a coffee.
 
@@ -243,8 +266,11 @@ The URL or key in `config.js` is wrong. Check for a missing quote, a trailing
 slash on the URL, or that you pasted the key into the URL field by mistake.
 
 **`permission denied for table ...` in the app**
-`schema.sql` didn't finish. Re-run the whole file from the top in the SQL
-Editor — it's designed to be safe to run repeatedly.
+`schema.sql` didn't finish — it's the part near the top that grants read access
+that you're missing. Re-run the whole file from the top in the SQL Editor; it's
+designed to be safe to run repeatedly. This is *not* caused by the
+"Automatically expose new tables" setting; the schema grants what it needs
+regardless of how that's set.
 
 **`extension "pgcrypto" is not available`**
 Rare, and usually means the project hadn't finished provisioning. Wait two
