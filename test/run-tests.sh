@@ -64,6 +64,10 @@ echo "==> config URL handling"
 node "$HERE/url.test.mjs"
 
 echo
+echo "==> renaming children"
+node "$HERE/rename.test.mjs"
+
+echo
 echo "==> approval flow"
 node "$HERE/flow.test.mjs"
 

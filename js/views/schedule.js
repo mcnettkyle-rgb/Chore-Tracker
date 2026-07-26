@@ -17,6 +17,21 @@ import { db } from '../data.js';
 
 const SUGGESTED_EMOJI = ['🛏️', '🧼', '🗑️', '🧹', '🐕', '🍽️', '🧺', '📚', '🧸', '🪥', '🚿', '🌱', '📦', '🚗', '✅'];
 
+/**
+ * Who a rotation currently covers, worked out from its members rather than its
+ * stored name — rename a child and every mention of the rotation follows,
+ * instead of a label going quietly stale.
+ *
+ * `separator` is '&' when naming the group and '→' when the order matters.
+ */
+export function rotationLabel(group, separator = '&') {
+  const names = (group?.child_ids ?? [])
+    .map((id) => childById(id)?.name)
+    .filter(Boolean);
+  if (!names.length) return group?.name || 'Rotation';
+  return names.join(` ${separator} `);
+}
+
 // ---------------------------------------------------------------------
 // Assignment editor row
 // ---------------------------------------------------------------------
@@ -31,7 +46,7 @@ function assignmentRow(existing, { children, groups, onRemove }) {
     assignee.append(el('option', { value: `child:${c.id}` }, c.name));
   }
   for (const g of groups) {
-    assignee.append(el('option', { value: `group:${g.id}` }, `${g.name} (alternating)`));
+    assignee.append(el('option', { value: `group:${g.id}` }, `${rotationLabel(g)} (alternating)`));
   }
   assignee.value = existing?.rotation_group_id
     ? `group:${existing.rotation_group_id}`
@@ -305,17 +320,18 @@ async function onEditGroup(group) {
     title: group ? 'Edit rotation' : 'New rotation',
     confirmLabel: 'Save',
     build: (body) => {
-      const name = el('input', { type: 'text', placeholder: 'e.g. Ava & Mia' });
-      name.value = group?.name ?? children.map((c) => c.name).join(' & ');
-
       const chosen = new Set(group?.child_ids ?? children.map((c) => c.id));
       const boxes = [];
 
+      // No name field on purpose. A rotation is identified everywhere by who is
+      // currently in it, so renaming a child updates every mention of it. A
+      // stored name would be a second source of truth that goes stale the
+      // moment you rename someone — which is exactly what used to happen.
       body.append(
         el('p', { class: 'field__hint', style: { marginTop: '0' } },
           'A rotation alternates a chore between kids, one week each, in the order below. ' +
           'Assign a chore to the rotation instead of to one kid and it swaps automatically every week.'),
-        el('div', { class: 'field' }, el('label', { class: 'field__label' }, 'Name'), name),
+        el('div', { class: 'field__label', style: { marginBottom: '8px' } }, 'Who alternates'),
       );
 
       for (const child of children) {
@@ -332,8 +348,10 @@ async function onEditGroup(group) {
       return () => {
         const ids = boxes.filter((b) => b.box.checked).map((b) => b.child.id);
         if (ids.length < 2) { error.textContent = 'Pick at least two kids to alternate between.'; return undefined; }
-        if (!name.value.trim()) { error.textContent = 'Give the rotation a name.'; return undefined; }
-        return { id: group?.id ?? null, name: name.value.trim(), child_ids: ids };
+        // `name` is NOT NULL in the schema, so store the member names. Nothing
+        // reads it back for display — rotationLabel() derives that live.
+        const label = boxes.filter((b) => b.box.checked).map((b) => b.child.name).join(' & ');
+        return { id: group?.id ?? null, name: label, child_ids: ids };
       };
     },
   });
@@ -443,9 +461,10 @@ export function renderSchedule() {
     const assignments = snap.assignments.filter((a) => a.chore_id === chore.id && a.active);
 
     const describe = (a) => {
-      const who = a.rotation_group_id
-        ? (snap.rotationGroups.find((g) => g.id === a.rotation_group_id)?.name ?? 'rotation')
-        : (childById(a.child_id)?.name ?? '—');
+      const group = a.rotation_group_id
+        ? snap.rotationGroups.find((g) => g.id === a.rotation_group_id)
+        : null;
+      const who = group ? rotationLabel(group) : (childById(a.child_id)?.name ?? '—');
       if (a.schedule_type === 'anytime') return `${who} · anytime`;
       if (a.schedule_type === 'oneoff') return `${who} · once`;
       const days = (a.days_of_week ?? []).slice().sort();
@@ -495,7 +514,7 @@ export function renderSchedule() {
       },
         el('span', { class: 'chore__emoji', style: { width: '42px', height: '42px', fontSize: '20px' } }, '🔁'),
         el('span', { class: 'row__body' },
-          el('span', { class: 'row__title', style: { display: 'block' } }, group.name),
+          el('span', { class: 'row__title', style: { display: 'block' } }, rotationLabel(group)),
           el('span', { class: 'row__meta', style: { display: 'block' } }, `${names} · swaps every week`),
         ),
       ),
