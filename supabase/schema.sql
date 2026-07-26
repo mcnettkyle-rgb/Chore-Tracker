@@ -21,7 +21,25 @@
 -- threat model. It is not bank-grade and no real money moves through it.
 -- =====================================================================
 
-create extension if not exists pgcrypto;
+-- ---------------------------------------------------------------------
+-- pgcrypto provides crypt(), gen_salt() and gen_random_bytes(), which hash
+-- the parent PIN and mint session tokens.
+--
+-- Where it lives differs by host: Supabase keeps extensions in a dedicated
+-- `extensions` schema, while a stock Postgres puts them in `public`. Every
+-- function below therefore sets `search_path = public, extensions` — a schema
+-- that doesn't exist is ignored, so the same script works on both.
+-- ---------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_extension where extname = 'pgcrypto') then
+    if exists (select 1 from pg_namespace where nspname = 'extensions') then
+      create extension pgcrypto with schema extensions;
+    else
+      create extension pgcrypto;
+    end if;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
@@ -267,7 +285,7 @@ returns date
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select p_date - (
     (extract(dow from p_date)::int
@@ -281,7 +299,7 @@ returns jsonb
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select coalesce((select settings from household limit 1), '{}'::jsonb);
 $$;
@@ -292,7 +310,7 @@ create or replace function require_parent(p_token text)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_minutes int;
@@ -323,7 +341,7 @@ returns jsonb
 language plpgsql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_fails int;
@@ -345,7 +363,7 @@ create or replace function parent_unlock(p_pin text)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_hash    text;
@@ -396,7 +414,7 @@ create or replace function parent_lock(p_token text)
 returns void
 language sql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   delete from parent_sessions where token = p_token;
 $$;
@@ -405,7 +423,7 @@ create or replace function set_parent_pin(p_token text, p_new_pin text)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
@@ -430,7 +448,7 @@ create or replace function generate_week(p_any_date date default current_date)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   a          record;
@@ -552,7 +570,7 @@ create or replace function submit_chore(p_instance_id uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_inst     chore_instances%rowtype;
@@ -610,7 +628,7 @@ create or replace function unsubmit_chore(p_instance_id uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   update chore_instances
@@ -632,7 +650,7 @@ create or replace function approve_chore(p_token text, p_instance_id uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_inst chore_instances%rowtype;
@@ -664,7 +682,7 @@ create or replace function reject_chore(p_token text, p_instance_id uuid, p_note
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
@@ -690,7 +708,7 @@ create or replace function approve_all(p_token text, p_child_id uuid default nul
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   r     record;
@@ -719,7 +737,7 @@ create or replace function record_payout(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
@@ -741,7 +759,7 @@ create or replace function adjust_balance(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
@@ -765,7 +783,7 @@ create or replace function upsert_child(p_token text, p_child jsonb)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare v_id uuid;
 begin
@@ -801,7 +819,7 @@ create or replace function upsert_chore(p_token text, p_chore jsonb)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_id    uuid;
@@ -850,7 +868,7 @@ create or replace function upsert_assignment(p_token text, p_assignment jsonb)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_id   uuid;
@@ -907,7 +925,7 @@ create or replace function delete_assignment(p_token text, p_assignment_id uuid)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
@@ -921,7 +939,7 @@ create or replace function upsert_rotation_group(p_token text, p_group jsonb)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_id  uuid;
@@ -955,7 +973,7 @@ create or replace function update_settings(p_token text, p_patch jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare v_settings jsonb;
 begin
@@ -969,7 +987,7 @@ create or replace function rename_household(p_token text, p_name text)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
@@ -986,7 +1004,7 @@ create or replace function register_push(
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   perform require_parent(p_token);
@@ -1004,7 +1022,7 @@ create or replace function unregister_push(p_endpoint text)
 returns void
 language sql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   delete from push_subscriptions where endpoint = p_endpoint;
 $$;
@@ -1018,7 +1036,7 @@ returns table (child_id uuid, balance_cents bigint)
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
   select c.id, coalesce(sum(l.amount_cents), 0)::bigint
     from children c

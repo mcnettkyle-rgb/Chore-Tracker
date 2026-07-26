@@ -47,7 +47,7 @@ create or replace function notify_parent_of_submission()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_url    text;

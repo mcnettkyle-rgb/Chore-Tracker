@@ -10,3 +10,11 @@ alter default privileges in schema public grant all on functions to anon, authen
 alter default privileges in schema public grant all on sequences to anon, authenticated;
 
 do $$ begin create publication supabase_realtime; exception when duplicate_object then null; end $$;
+
+-- Supabase installs extensions into a dedicated `extensions` schema, NOT public.
+-- Reproducing that here matters: a function pinned to `search_path = public`
+-- finds pgcrypto on a stock Postgres and fails on Supabase, and without this
+-- the tests would never see the difference.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+grant usage on schema extensions to anon, authenticated;
