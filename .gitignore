@@ -1,8 +1,4 @@
-# Your Supabase URL + anon key. Copy config.example.js to config.js.
-# The anon key is not a secret, but keeping this untracked means your
-# project details don't end up in a public repo by accident.
-config.js
-
 .DS_Store
 node_modules/
 *.log
+.test-screenshots/
