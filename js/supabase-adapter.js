@@ -230,6 +230,9 @@ export class SupabaseAdapter {
   upsertRotationGroup(token, g)   { return this.#rpc('upsert_rotation_group', { p_token: token, p_group: g }); }
   updateSettings(token, patch)    { return this.#rpc('update_settings', { p_token: token, p_patch: patch }); }
   renameHousehold(token, name)    { return this.#rpc('rename_household', { p_token: token, p_name: name }); }
+  startFresh(token, from, wipeMoney = false) {
+    return this.#rpc('start_fresh', { p_token: token, p_from: from, p_wipe_money: wipeMoney });
+  }
 
   // -------------------------------------------------------------------
   // push

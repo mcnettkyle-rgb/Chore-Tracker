@@ -54,12 +54,13 @@ end $$;
 --
 --   1  initial schema
 --   2  lifetime_totals() for the parent dashboard
+--   3  start_fresh() and the history_start_date setting
 -- ---------------------------------------------------------------------
 create or replace function schema_version()
 returns int
 language sql
 immutable
-as $$ select 2; $$;
+as $$ select 3; $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
@@ -99,6 +100,10 @@ create table if not exists household (
                     -- Set automatically from the parent's browser the first
                     -- time Settings is opened; quiet hours are evaluated in it.
                     'timezone',                'UTC',
+                    -- Set by start_fresh(). Nothing before this date is
+                    -- generated or counted, so a trial run doesn't haunt the
+                    -- statistics forever. Null means "count everything".
+                    'history_start_date',      null,
                     'parent_session_minutes',  240
                   ),
   created_at      timestamptz not null default now()
@@ -489,9 +494,15 @@ declare
   v_idx      int;
   v_created  int := 0;
   v_removed  int := 0;
+  v_hist     date;
 begin
   v_ws     := week_start_for(p_any_date);
   v_ws_dow := extract(dow from v_ws)::int;
+
+  -- Anything before the fresh-start date is deliberately not regenerated.
+  -- Without this, start_fresh() would delete a trial run's leftovers and the
+  -- next page load would put them straight back.
+  v_hist := nullif(get_settings()->>'history_start_date', '')::date;
 
   -- Drop untouched chores whose template row was since switched off, so
   -- unscheduling a chore mid-week actually clears it from the kid's list.
@@ -553,6 +564,7 @@ begin
     if a.schedule_type = 'weekly_days' then
       foreach v_dow in array a.days_of_week loop
         v_due := v_ws + (((v_dow - v_ws_dow) + 7) % 7);
+        continue when v_hist is not null and v_due < v_hist;
         insert into chore_instances
           (assignment_id, chore_id, child_id, week_start, due_date,
            value_cents, chore_name, chore_emoji)
@@ -564,6 +576,7 @@ begin
       end loop;
 
     elsif a.schedule_type = 'anytime' then
+      continue when v_hist is not null and v_ws + 6 < v_hist;
       insert into chore_instances
         (assignment_id, chore_id, child_id, week_start, due_date,
          value_cents, chore_name, chore_emoji)
@@ -574,6 +587,7 @@ begin
       v_created := v_created + (case when found then 1 else 0 end);
 
     elsif a.schedule_type = 'oneoff' and week_start_for(a.oneoff_week) = v_ws then
+      continue when v_hist is not null and v_ws + 6 < v_hist;
       insert into chore_instances
         (assignment_id, chore_id, child_id, week_start, due_date,
          value_cents, chore_name, chore_emoji)
@@ -1012,6 +1026,68 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------
+-- Draw a line under a trial run.
+--
+-- Setting the app up means generating a week of chores nobody was actually
+-- asked to do, and those sit in the statistics as misses forever. This wipes
+-- them and records a start date, so generate_week() won't simply recreate
+-- them on the next page load.
+--
+-- Chores that were approved keep their money by default: p_wipe_money must be
+-- asked for explicitly, because deleting a ledger is not something to do by
+-- accident.
+-- ---------------------------------------------------------------------
+create or replace function start_fresh(
+  p_token      text,
+  p_from       date default current_date,
+  p_wipe_money boolean default false
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_chores int := 0;
+  v_ledger int := 0;
+begin
+  perform require_parent(p_token);
+
+  if p_from is null then
+    raise exception 'A start date is required.';
+  end if;
+
+  if p_wipe_money then
+    delete from ledger_entries where id is not null;
+    get diagnostics v_ledger = row_count;
+
+    -- Everything before the line goes, approved or not.
+    delete from chore_instances
+     where coalesce(due_date, week_start + 6) < p_from;
+    get diagnostics v_chores = row_count;
+  else
+    -- Only work nobody ever acted on. Approved chores and the money they
+    -- earned survive, because that history is real.
+    delete from chore_instances
+     where coalesce(due_date, week_start + 6) < p_from
+       and status in ('pending', 'rejected');
+    get diagnostics v_chores = row_count;
+  end if;
+
+  update household
+     set settings = settings || jsonb_build_object('history_start_date', to_char(p_from, 'YYYY-MM-DD'))
+   where singleton;
+
+  return jsonb_build_object(
+    'ok', true,
+    'from', p_from,
+    'chores_removed', v_chores,
+    'ledger_removed', v_ledger
+  );
+end;
+$$;
+
 create or replace function rename_household(p_token text, p_name text)
 returns void
 language plpgsql
@@ -1125,6 +1201,7 @@ grant execute on function
   upsert_rotation_group(text, jsonb),
   update_settings(text, jsonb),
   rename_household(text, text),
+  start_fresh(text, date, boolean),
   register_push(text, text, text, text, text),
   unregister_push(text),
   child_balances(),

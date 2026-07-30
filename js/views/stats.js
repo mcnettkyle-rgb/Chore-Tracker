@@ -9,12 +9,15 @@ import { state, setState, currency, settings, toast } from '../store.js';
 import { db } from '../data.js';
 import { summarise, emptySummary, ranges, rangeById, rangeProgress } from '../stats.js';
 
+/** The date a fresh start was declared, if any. */
+const historyStart = () => settings().history_start_date || null;
+
 // Cached between renders so switching tabs doesn't refetch, and so a realtime
 // update doesn't blank the screen while new figures load.
 let cache = { key: null, data: null, loading: false };
 
 function load(rangeId) {
-  const range = rangeById(rangeId, settings().week_start_day ?? 0);
+  const range = rangeById(rangeId, settings().week_start_day ?? 0, ymd(), historyStart());
   const key = `${rangeId}:${range.from}:${range.to}:${state.dataVersion}`;
   if (cache.key === key || cache.loading) return;
 
@@ -109,7 +112,7 @@ export function renderStats() {
   const sym = currency();
   const weekStartDay = settings().week_start_day ?? 0;
   const rangeId = state.statsRange ?? 'this_week';
-  const range = rangeById(rangeId, weekStartDay);
+  const range = rangeById(rangeId, weekStartDay, ymd(), historyStart());
 
   load(rangeId);
 
@@ -117,7 +120,7 @@ export function renderStats() {
 
   // ---- timeframe picker ----
   const picker = el('div', { class: 'tabs', style: { marginBottom: '14px' } });
-  for (const r of ranges(weekStartDay)) {
+  for (const r of ranges(weekStartDay, ymd(), historyStart())) {
     picker.append(el('button', {
       class: 'tab',
       type: 'button',
@@ -127,15 +130,16 @@ export function renderStats() {
   }
   wrap.append(picker);
 
+  // An open-ended range has no progress to report. Since a fresh start gives
+  // "All time" a `from` but never a `to`, key this off `to` rather than `from`.
   const progress = rangeProgress(range);
-  wrap.append(
-    el('p', { class: 'hint', style: { textAlign: 'center', marginTop: '0' } },
-      range.from
-        ? progress.complete
-          ? `${formatWeekRange(range.from)} · finished`
-          : `${formatWeekRange(range.from)} · day ${progress.elapsed} of ${progress.total}`
-        : 'Every chore ever scheduled'),
-  );
+  const caption = !range.to
+    ? (historyStart() ? `Everything since ${historyStart()}` : 'Every chore ever scheduled')
+    : progress.complete
+      ? `${formatWeekRange(range.from)} · finished`
+      : `${formatWeekRange(range.from)} · day ${progress.elapsed} of ${progress.total}`;
+
+  wrap.append(el('p', { class: 'hint', style: { textAlign: 'center', marginTop: '0' } }, caption));
 
   // Keep showing the previous figures while a new range loads, rather than
   // flashing a spinner over numbers that are still broadly right.

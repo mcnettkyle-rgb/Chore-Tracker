@@ -11,4 +11,5 @@
 //
 //   1  initial schema
 //   2  lifetime_totals() for the parent dashboard
-export const EXPECTED_SCHEMA_VERSION = 2;
+//   3  start_fresh() and the history_start_date setting
+export const EXPECTED_SCHEMA_VERSION = 3;

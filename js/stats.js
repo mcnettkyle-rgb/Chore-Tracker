@@ -108,7 +108,7 @@ function monthEnd(dateStr) {
  * The timeframe options on the dashboard. `all` has no bounds, which is what
  * makes lifetime totals and period totals agree.
  */
-export function ranges(weekStartDay = 0, today = ymd()) {
+export function ranges(weekStartDay = 0, today = ymd(), historyStart = null) {
   const thisWeek = weekStartFor(today, weekStartDay);
   const lastWeek = addDays(thisWeek, -7);
 
@@ -120,12 +120,14 @@ export function ranges(weekStartDay = 0, today = ymd()) {
     { id: 'last_week',  label: 'Last week',  from: lastWeek, to: addDays(lastWeek, 6) },
     { id: 'this_month', label: 'This month', from: thisMonth, to: monthEnd(today) },
     { id: 'last_month', label: 'Last month', from: monthStart(lastMonthDay), to: monthEnd(lastMonthDay) },
-    { id: 'all',        label: 'All time',   from: null, to: null },
+    // "All time" starts at the fresh-start date when there is one, so the
+    // trial run you deliberately cleared doesn't reappear in the lifetime view.
+    { id: 'all',        label: 'All time',   from: historyStart, to: null },
   ];
 }
 
-export function rangeById(id, weekStartDay = 0, today = ymd()) {
-  const all = ranges(weekStartDay, today);
+export function rangeById(id, weekStartDay = 0, today = ymd(), historyStart = null) {
+  const all = ranges(weekStartDay, today, historyStart);
   return all.find((r) => r.id === id) ?? all[0];
 }
 

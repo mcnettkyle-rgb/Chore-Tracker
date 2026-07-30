@@ -201,6 +201,20 @@ part; how fast you review shouldn't move their score.
 An "anytime this week" chore has no due date, so it counts on the last day of
 its week — that's the point at which it was genuinely owed.
 
+### Drawing a line under a trial run
+
+Setting the app up generates a week of chores nobody was actually asked to do,
+and those sit in the statistics as misses forever. **Settings → Going live**
+deletes them and records a start date.
+
+The date is the important half. `generate_week()` runs on every page load and
+would otherwise recreate everything that was just cleared, so it skips anything
+before that date too. "All time" on the dashboard then starts there as well.
+
+By default only chores nobody acted on are removed — approved work and the
+money it earned are real history and are kept. Wiping balances is a separate,
+explicit checkbox.
+
 ### The week generates itself
 
 `generate_week()` builds the week's chores from your template. It's idempotent
@@ -226,6 +240,7 @@ Everything below lives in **Parent → Schedule** or **Parent → Settings**:
 | Notifications, quiet hours | Settings → Notifications |
 | Completion rate, missed chores, lifetime earnings | Progress → pick a timeframe |
 | Change the PIN | Settings → Parent PIN |
+| Clear a trial run before going live | Settings → Going live |
 
 Archiving a chore keeps all its history. Removing a child keeps their balance,
 so you can add them back.

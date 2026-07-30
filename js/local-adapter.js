@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS = {
   quiet_hours_start: 21,
   quiet_hours_end: 7,
   timezone: 'UTC',
+  history_start_date: null,
   parent_session_minutes: 240,
 };
 
@@ -212,7 +213,11 @@ export class LocalAdapter {
           (ci.due_date ?? null) === (dueDate ?? null),
       );
 
+    const hist = settings.history_start_date || null;
+
     const add = (a, chore, childId, dueDate) => {
+      // Matches generate_week(): never regenerate what start_fresh() cleared.
+      if (hist && (dueDate ?? weekEnd) < hist) return;
       if (has(a.id, childId, dueDate)) return;
       db.chore_instances.push({
         id: uuid(),
@@ -569,6 +574,30 @@ export class LocalAdapter {
     Object.assign(db.household.settings, patch);
     this.#commit(db);
     return db.household.settings;
+  }
+
+  /** Mirrors start_fresh() in schema.sql. */
+  async startFresh(token, from, wipeMoney = false) {
+    const db = this.#read();
+    this.#requireParent(db, token);
+    if (!from) throw new Error('A start date is required.');
+
+    const effective = (ci) => ci.due_date ?? addDays(ci.week_start, 6);
+    const before = db.chore_instances.length;
+
+    if (wipeMoney) {
+      db.ledger_entries = [];
+      db.chore_instances = db.chore_instances.filter((ci) => effective(ci) >= from);
+    } else {
+      // Approved work and the money it earned survive; only untouched chores go.
+      db.chore_instances = db.chore_instances.filter(
+        (ci) => effective(ci) >= from || !['pending', 'rejected'].includes(ci.status),
+      );
+    }
+
+    db.household.settings.history_start_date = from;
+    this.#commit(db);
+    return { ok: true, from, chores_removed: before - db.chore_instances.length };
   }
 
   async renameHousehold(token, name) {

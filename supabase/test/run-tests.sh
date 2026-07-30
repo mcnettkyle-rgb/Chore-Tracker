@@ -115,6 +115,11 @@ for MODE in permissive strict; do
   echo "==> notification tests"
   run "$PGDATA/notifications.sql"
   show "$HERE/notifications.test.sql"
+
+  # Last: it deletes history the tests above rely on.
+  echo
+  echo "==> fresh start"
+  show "$HERE/fresh-start.test.sql"
 done
 
 echo

@@ -1,6 +1,6 @@
 // Everything a parent can reconfigure without touching code.
 
-import { el, contrastOn, DAY_NAMES } from '../util.js';
+import { el, contrastOn, ymd, DAY_NAMES } from '../util.js';
 import { section, openDialog, confirmDialog, emptyState } from '../ui.js';
 import { state, settings, parentAction, refresh, toast, exitParent } from '../store.js';
 import { db, isDemo, CONFIG } from '../data.js';
@@ -310,6 +310,75 @@ export function renderSettings() {
       }, snap.household?.pin_is_set ? 'Change PIN' : 'Set a PIN'),
       el('button', { class: 'btn btn--ghost', type: 'button', onclick: exitParent }, 'Lock now'),
     ),
+  ));
+
+  // ---- fresh start ----
+  wrap.append(section('Going live', null,
+    el('p', { class: 'field__hint', style: { marginTop: '0' } },
+      s.history_start_date
+        ? `Statistics currently count everything from ${s.history_start_date} onwards. `
+          + 'Anything before that was cleared and will not come back.'
+        : 'Setting the app up generates a week of chores nobody was actually asked to do, '
+          + 'and those count as missed forever. Clear them the day you start for real.'),
+    el('button', {
+      class: 'btn btn--primary', type: 'button',
+      onclick: async () => {
+        const result = await openDialog({
+          title: 'Start fresh',
+          confirmLabel: 'Clear and start fresh',
+          build: (body) => {
+            const from = el('input', { type: 'date' });
+            from.value = ymd();
+
+            const wipe = el('input', { type: 'checkbox' });
+            const error = el('div', { class: 'pin-error', style: { textAlign: 'left' } });
+
+            body.append(
+              el('p', { class: 'field__hint', style: { marginTop: '0' } },
+                'Chores before this date that nobody ever did are deleted, and will not be '
+                + 'regenerated. Your chore list, schedule, children and PIN are untouched.'),
+              el('div', { class: 'field' },
+                el('label', { class: 'field__label' }, 'Count statistics from'), from,
+                el('div', { class: 'field__hint' }, 'Usually today — the first day you use it for real.'),
+              ),
+              el('label', { class: 'check' }, wipe,
+                el('span', {},
+                  el('span', { class: 'check__title' }, 'Also wipe test earnings and balances'),
+                  el('span', { class: 'check__hint' },
+                    'Deletes every approved chore before that date and the whole money history, '
+                    + 'putting all balances back to zero. Leave this off to keep anything real.'),
+                ),
+              ),
+              error,
+            );
+
+            return () => {
+              if (!from.value) { error.textContent = 'Pick a date.'; return undefined; }
+              return { from: from.value, wipe: wipe.checked };
+            };
+          },
+        });
+        if (!result) return;
+
+        const ok = await confirmDialog({
+          title: result.wipe ? 'Delete all money history?' : 'Clear unfinished chores?',
+          message: result.wipe
+            ? `Every balance goes to zero and all earnings before ${result.from} are deleted. There is no undo.`
+            : `Chores before ${result.from} that were never done are deleted. Approved chores and balances are kept.`,
+          confirmLabel: result.wipe ? 'Delete everything' : 'Clear them',
+        });
+        if (!ok) return;
+
+        try {
+          const res = await parentAction((token) => db.startFresh(token, result.from, result.wipe));
+          await db.generateWeek();
+          await refresh();
+          toast(`Cleared ${res?.chores_removed ?? 0} old chores`, 'good');
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      },
+    }, s.history_start_date ? 'Start fresh again' : 'Clear test data and start fresh'),
   ));
 
   // ---- demo tools ----

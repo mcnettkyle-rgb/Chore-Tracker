@@ -80,6 +80,10 @@ echo "==> expired chores"
 node "$HERE/expired.test.mjs"
 
 echo
+echo "==> fresh start"
+node "$HERE/fresh-start.test.mjs"
+
+echo
 echo "==> parent dashboard"
 node "$HERE/dashboard.test.mjs"
 
