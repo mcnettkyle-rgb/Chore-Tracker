@@ -10,6 +10,8 @@ const PROFILE_KEY = 'chore-tracker-profile';   // remembers whose tablet this is
 const TOKEN_KEY = 'chore-tracker-parent';      // sessionStorage: gone when the browser closes
 
 export const state = {
+  statsRange: 'this_week',   // dashboard timeframe
+  dataVersion: 0,            // bumped on every refresh; see refresh()
   ready: false,
   route: 'picker',        // 'picker' | 'kid' | 'parent'
   parentTab: 'queue',     // 'queue' | 'ledger' | 'schedule' | 'settings'
@@ -65,6 +67,10 @@ export async function refresh() {
   const snap = await db.snapshot({ weekStart: state.weekStart ?? undefined });
   state.snap = snap;
   state.weekStart = state.weekStart ?? snap.weekStart;
+  // Bumped on every refresh. Views holding their own cache (the dashboard
+  // fetches a wider date range than the snapshot) key off this to know their
+  // figures are stale, without store.js needing to import them.
+  state.dataVersion++;
   emit();
   return snap;
 }

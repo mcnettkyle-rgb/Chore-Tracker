@@ -13,9 +13,11 @@ import { db } from '../data.js';
 import { renderLedger } from './ledger.js';
 import { renderSchedule } from './schedule.js';
 import { renderSettings } from './settings.js';
+import { renderStats } from './stats.js';
 
 const TABS = [
   { id: 'queue',    label: 'To check' },
+  { id: 'stats',    label: 'Progress' },
   { id: 'ledger',   label: 'Money' },
   { id: 'schedule', label: 'Schedule' },
   { id: 'settings', label: 'Settings' },
@@ -184,7 +186,8 @@ export function renderParent() {
     );
   }
 
-  if (state.parentTab === 'ledger')        wrap.append(renderLedger());
+  if (state.parentTab === 'stats')         wrap.append(renderStats());
+  else if (state.parentTab === 'ledger')   wrap.append(renderLedger());
   else if (state.parentTab === 'schedule') wrap.append(renderSchedule());
   else if (state.parentTab === 'settings') wrap.append(renderSettings());
   else                                     wrap.append(renderQueue());

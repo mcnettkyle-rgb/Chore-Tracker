@@ -60,6 +60,10 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 
+echo "==> stats arithmetic"
+node "$HERE/stats.test.mjs"
+
+echo
 echo "==> config URL handling"
 node "$HERE/url.test.mjs"
 
@@ -74,6 +78,10 @@ node "$HERE/flow.test.mjs"
 echo
 echo "==> expired chores"
 node "$HERE/expired.test.mjs"
+
+echo
+echo "==> parent dashboard"
+node "$HERE/dashboard.test.mjs"
 
 echo
 echo "==> configuration"

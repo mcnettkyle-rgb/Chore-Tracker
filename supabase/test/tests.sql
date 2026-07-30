@@ -166,6 +166,38 @@ exception when others then
 end;
 
 -- ---------------------------------------------------------------------
+raise notice '--- lifetime totals ---';
+
+-- Pick a child who has actually earned something, rather than assuming which
+-- one the earlier fixtures happened to touch.
+select l.child_id into v_child from ledger_entries l where l.type = 'earning' limit 1;
+perform assert(v_child is not null, 'found a child with earnings to check');
+
+select earned_cents, paid_cents into v_bal, v_bal2
+  from lifetime_totals() lt where lt.child_id = v_child;
+perform assert(v_bal > 0, 'lifetime earned is positive for a child who has earned');
+
+-- Payouts are stored negative; lifetime_totals must report them positive.
+perform record_payout(v_tok, v_child, 100, 'lifetime check');
+select paid_cents into v_val from lifetime_totals() lt where lt.child_id = v_child;
+perform assert(v_val = v_bal2 + 100, 'a payout raises lifetime paid as a positive amount');
+
+select balance_cents into v_n from lifetime_totals() lt where lt.child_id = v_child;
+perform assert(v_n = (select balance_cents from child_balances() cb where cb.child_id = v_child),
+               'lifetime balance agrees with child_balances()');
+
+-- Adjustments belong in their own bucket, not mistaken for earnings.
+select earned_cents into v_bal from lifetime_totals() lt where lt.child_id = v_child;
+perform adjust_balance(v_tok, v_child, 250, 'birthday money');
+select earned_cents, adjusted_cents into v_val, v_n
+  from lifetime_totals() lt where lt.child_id = v_child;
+perform assert(v_val = v_bal, 'an adjustment does not inflate lifetime earned');
+perform assert(v_n = 250, 'the adjustment is reported separately');
+
+perform assert((select count(*) from lifetime_totals()) = (select count(*) from children),
+               'every child gets a row, even with no ledger history');
+
+-- ---------------------------------------------------------------------
 raise notice '--- parent session expiry ---';
 perform parent_lock(v_tok);
 begin

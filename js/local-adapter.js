@@ -299,6 +299,41 @@ export class LocalAdapter {
     };
   }
 
+  /**
+   * Chore instances for a date range, plus lifetime money totals.
+   *
+   * Deliberately returns raw rows rather than computed figures: js/stats.js
+   * does the summarising for both adapters, so the dashboard can't disagree
+   * with itself depending on which mode you're in.
+   */
+  async statsFor({ from = null, to = null } = {}) {
+    const db = this.#read();
+
+    // A week's anytime chores count on the last day of that week, so widen the
+    // lower bound by six days before filtering precisely in stats.js.
+    const lower = from ? addDays(from, -6) : null;
+    const instances = db.chore_instances.filter((ci) => {
+      if (lower && ci.week_start < lower) return false;
+      if (to && ci.week_start > to) return false;
+      return true;
+    });
+
+    const lifetime = {};
+    for (const c of db.children) {
+      lifetime[c.id] = { earned: 0, paid: 0, adjusted: 0, balance: 0 };
+    }
+    for (const l of db.ledger_entries) {
+      const t = lifetime[l.child_id];
+      if (!t) continue;
+      if (l.type === 'earning') t.earned += l.amount_cents;
+      else if (l.type === 'payout') t.paid += -l.amount_cents;
+      else t.adjusted += l.amount_cents;
+      t.balance += l.amount_cents;
+    }
+
+    return { instances, lifetime, from, to };
+  }
+
   // -------------------------------------------------------------------
   // kid actions
   // -------------------------------------------------------------------

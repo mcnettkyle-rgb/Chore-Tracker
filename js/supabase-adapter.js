@@ -4,7 +4,7 @@
 // an RPC. There is deliberately no direct INSERT/UPDATE/DELETE anywhere in
 // this file — the database rejects those, and that is the whole point.
 
-import { ymd, weekStartFor } from './util.js';
+import { ymd, weekStartFor, addDays } from './util.js';
 
 const SUPABASE_ESM = 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -134,6 +134,40 @@ export class SupabaseAdapter {
 
   async generateWeek(anyDate = ymd()) {
     return this.#rpc('generate_week', { p_any_date: anyDate });
+  }
+
+  /**
+   * Chore instances for a date range, plus lifetime money totals.
+   *
+   * Returns raw rows on purpose — js/stats.js summarises for both adapters, so
+   * the dashboard can't produce different numbers in demo mode and live mode.
+   */
+  async statsFor({ from = null, to = null } = {}) {
+    // A week's anytime chores count on the last day of that week, so widen the
+    // lower bound by six days and let stats.js filter precisely.
+    const lower = from ? addDays(from, -6) : null;
+
+    const [instances, lifetimeRows] = await Promise.all([
+      this.#select('chore_instances', (q) => {
+        let query = q;
+        if (lower) query = query.gte('week_start', lower);
+        if (to) query = query.lte('week_start', to);
+        return query;
+      }),
+      this.#rpc('lifetime_totals'),
+    ]);
+
+    const lifetime = {};
+    for (const row of lifetimeRows ?? []) {
+      lifetime[row.child_id] = {
+        earned: Number(row.earned_cents),
+        paid: Number(row.paid_cents),
+        adjusted: Number(row.adjusted_cents),
+        balance: Number(row.balance_cents),
+      };
+    }
+
+    return { instances, lifetime, from, to };
   }
 
   // -------------------------------------------------------------------

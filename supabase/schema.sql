@@ -1053,6 +1053,32 @@ as $$
    group by c.id;
 $$;
 
+-- Everything a child has ever earned, been paid, and been adjusted by.
+-- Payout rows are stored negative, so they're flipped here to read as a
+-- positive "amount handed over".
+create or replace function lifetime_totals()
+returns table (
+  child_id       uuid,
+  earned_cents   bigint,
+  paid_cents     bigint,
+  adjusted_cents bigint,
+  balance_cents  bigint
+)
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+  select c.id,
+         coalesce(sum(l.amount_cents) filter (where l.type = 'earning'), 0)::bigint,
+         coalesce(-sum(l.amount_cents) filter (where l.type = 'payout'), 0)::bigint,
+         coalesce(sum(l.amount_cents) filter (where l.type = 'adjustment'), 0)::bigint,
+         coalesce(sum(l.amount_cents), 0)::bigint
+    from children c
+    left join ledger_entries l on l.child_id = c.id
+   group by c.id;
+$$;
+
 -- =====================================================================
 -- Grants — only the functions above are callable by anon.
 -- =====================================================================
@@ -1080,7 +1106,8 @@ grant execute on function
   rename_household(text, text),
   register_push(text, text, text, text, text),
   unregister_push(text),
-  child_balances()
+  child_balances(),
+  lifetime_totals()
 to anon, authenticated;
 
 -- require_parent is internal plumbing; never expose it.

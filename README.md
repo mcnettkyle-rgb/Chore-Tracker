@@ -3,11 +3,14 @@
 A weekly chore and allowance app for a family. Kids mark chores done from
 their own tablets; nothing earns money until a parent approves it.
 
-- **Kids** get a one-tap screen showing only what they need to do now.
+- **Kids** get a one-tap screen showing only what they need to do now, split
+  into what's due today and what has all week.
 - **You** get an approval queue, and a phone notification when something lands
   in it.
 - **Money** accrues per approved chore into a running balance you pay out when
   cash actually changes hands.
+- **A dashboard** shows completion rate, missed chores and lifetime earnings
+  over any week or month — for rewarding a perfect run.
 - **Everything is editable in the app** — chores, prices, who does what, which
   days. You should never need to touch the code to change the routine.
 
@@ -184,6 +187,20 @@ future week — it never rewrites what the girls already earned.
 A unique index guarantees at most one payment per chore, so a double-tapped
 **Approve** cannot pay twice.
 
+### What "completion rate" counts
+
+The dashboard scores a chore once its day has passed, or once it's been
+approved. Anything still ahead of its deadline sits outside the rate entirely —
+otherwise a rate checked on Wednesday would be dragged down by Friday's chores
+and 100% would be unreachable, which would make the perfect-period badge
+impossible to earn.
+
+Chores sitting in your approval queue count as done. The kid finished their
+part; how fast you review shouldn't move their score.
+
+An "anytime this week" chore has no due date, so it counts on the last day of
+its week — that's the point at which it was genuinely owed.
+
 ### The week generates itself
 
 `generate_week()` builds the week's chores from your template. It's idempotent
@@ -207,6 +224,7 @@ Everything below lives in **Parent → Schedule** or **Parent → Settings**:
 | Kids' names, colours, avatars | Settings → Children |
 | Week start day, currency, late chores | Settings → Rules |
 | Notifications, quiet hours | Settings → Notifications |
+| Completion rate, missed chores, lifetime earnings | Progress → pick a timeframe |
 | Change the PIN | Settings → Parent PIN |
 
 Archiving a chore keeps all its history. Removing a child keeps their balance,
@@ -217,7 +235,7 @@ so you can add them back.
 ## Tests
 
 **Database** — spins up a throwaway local Postgres, applies the real schema, and
-runs 57 assertions. Never touches your Supabase project. Needs `postgresql-16`.
+runs 140 assertions. Never touches your Supabase project. Needs `postgresql-16`.
 
 ```bash
 ./supabase/test/run-tests.sh
@@ -230,14 +248,16 @@ PIN, and `anon` cannot approve, re-price, or read the PIN hash. The local
 cluster grants `anon` the same privileges Supabase does, so those last checks
 exercise row-level security rather than a missing `GRANT`.
 
-**Browser** — drives the real UI in Chromium. Needs Playwright.
+**Browser** — drives the real UI in Chromium, against a demo-mode copy so it
+never touches your data. 129 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh
 ```
 
 It walks the whole loop — mark done, undo, reject with a note, redo, approve,
-pay out — and the parent editors, re-pricing, and PIN lockout. Screenshots land
+pay out — plus the parent editors, re-pricing, renaming children, expired
+chores, the dashboard across timeframes, and the PIN lockout. Screenshots land
 in `.test-screenshots/`.
 
 ---
@@ -256,7 +276,8 @@ js/
   supabase-adapter.js   real backend + realtime
   push.js               web push registration
   ui.js  util.js
-  views/                picker, kid, parent, ledger, schedule, settings, pin
+  stats.js              dashboard arithmetic (shared by both adapters)
+  views/                picker, kid, parent, stats, ledger, schedule, settings, pin
 sw.js                   service worker: install + push
 supabase/
   schema.sql            tables, RLS, functions  ← run this first
