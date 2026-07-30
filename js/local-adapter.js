@@ -8,6 +8,7 @@
 // any account. Data lives in one browser and does not sync.
 
 import { uuid, ymd, addDays, weekStartFor, dayOfWeek, daysBetween } from './util.js';
+import { EXPECTED_SCHEMA_VERSION } from './version.js';
 
 const KEY = 'chore-tracker-db-v1';
 
@@ -256,6 +257,11 @@ export class LocalAdapter {
       }
     }
     return ws;
+  }
+
+  /** Demo mode ships with the app, so it is never behind. */
+  async schemaVersion() {
+    return EXPECTED_SCHEMA_VERSION;
   }
 
   async generateWeek(anyDate = ymd()) {

@@ -5,6 +5,7 @@
 
 import { db } from './data.js';
 import { ymd, weekStartFor, daysBetween } from './util.js';
+import { EXPECTED_SCHEMA_VERSION } from './version.js';
 
 const PROFILE_KEY = 'chore-tracker-profile';   // remembers whose tablet this is
 const TOKEN_KEY = 'chore-tracker-parent';      // sessionStorage: gone when the browser closes
@@ -12,6 +13,7 @@ const TOKEN_KEY = 'chore-tracker-parent';      // sessionStorage: gone when the 
 export const state = {
   statsRange: 'this_week',   // dashboard timeframe
   dataVersion: 0,            // bumped on every refresh; see refresh()
+  schemaVersion: null,       // what the database actually has
   ready: false,
   route: 'picker',        // 'picker' | 'kid' | 'parent'
   parentTab: 'queue',     // 'queue' | 'ledger' | 'schedule' | 'settings'
@@ -56,6 +58,10 @@ export async function boot() {
     state.route = 'kid';
     state.childId = saved;
   }
+
+  // If the database is behind the app, say so plainly rather than letting it
+  // surface later as a missing-function error from whichever screen hits it first.
+  try { state.schemaVersion = await db.schemaVersion(); } catch { state.schemaVersion = null; }
 
   // Any change from another tab (demo mode) or another device (Supabase).
   db.subscribe(() => refresh());
@@ -212,3 +218,10 @@ export function toast(message, kind = 'info') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { host.className = 'toast'; }, kind === 'error' ? 5000 : 2800);
 }
+
+/** True when the database predates something this build of the app needs. */
+export function schemaOutOfDate() {
+  return state.schemaVersion !== null && state.schemaVersion < EXPECTED_SCHEMA_VERSION;
+}
+
+export { EXPECTED_SCHEMA_VERSION };

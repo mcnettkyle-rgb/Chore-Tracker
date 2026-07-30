@@ -132,6 +132,20 @@ export class SupabaseAdapter {
     };
   }
 
+  /**
+   * What version of schema.sql the database actually has.
+   *
+   * Returns 1 if the function itself is missing, which is exactly what a
+   * database predating this check looks like.
+   */
+  async schemaVersion() {
+    try {
+      return Number(await this.#rpc('schema_version')) || 1;
+    } catch {
+      return 1;
+    }
+  }
+
   async generateWeek(anyDate = ymd()) {
     return this.#rpc('generate_week', { p_any_date: anyDate });
   }
@@ -154,7 +168,10 @@ export class SupabaseAdapter {
         if (to) query = query.lte('week_start', to);
         return query;
       }),
-      this.#rpc('lifetime_totals'),
+      // Missing on a database that hasn't had the latest schema.sql applied.
+      // The rest of the dashboard is still worth showing, and the version
+      // banner explains what to do about it.
+      this.#rpc('lifetime_totals').catch(() => []),
     ]);
 
     const lifetime = {};

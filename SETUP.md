@@ -444,6 +444,12 @@ tells you which mode you're actually in.
 Supabase pauses free projects after about 7 days with zero activity. Un-pause it
 from the dashboard; nothing is lost. Daily family use never triggers this.
 
+**"Could not find the function ... in the schema cache"**
+Your database is behind the app — you pulled a code update without re-running
+the SQL. Paste [`supabase/schema.sql`](supabase/schema.sql) into the SQL Editor
+and Run. It's safe over the top; your data is untouched. The parent screen
+shows a banner when this is the case, naming both version numbers.
+
 **I want to start over**
 Run [`supabase/reset.sql`](supabase/reset.sql) in the SQL Editor, then
 `schema.sql` and `seed.sql` again. This erases everything — chores, approvals,

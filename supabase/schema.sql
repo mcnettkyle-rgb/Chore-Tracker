@@ -42,6 +42,26 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Schema version
+-- ---------------------------------------------------------------------
+-- Bumped whenever this file gains something the app depends on. The app
+-- compares it against the version it was built for and tells the parent to
+-- re-run this file if the database is behind.
+--
+-- Without it, pulling an app update but forgetting the SQL surfaces as a raw
+-- PostgREST error ("Could not find the function ... in the schema cache"),
+-- which says nothing about what to actually do.
+--
+--   1  initial schema
+--   2  lifetime_totals() for the parent dashboard
+-- ---------------------------------------------------------------------
+create or replace function schema_version()
+returns int
+language sql
+immutable
+as $$ select 2; $$;
+
+-- ---------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------
 do $$ begin
@@ -1083,6 +1103,7 @@ $$;
 -- Grants — only the functions above are callable by anon.
 -- =====================================================================
 grant execute on function
+  schema_version(),
   week_start_for(date),
   get_settings(),
   parent_status(),

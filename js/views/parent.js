@@ -7,7 +7,7 @@ import { el, formatMoney, timeAgo, contrastOn } from '../util.js';
 import { section, emptyState, childChip, promptDialog, confirmDialog } from '../ui.js';
 import {
   state, setState, currency, childById, exitParent, pendingQueue,
-  parentAction, toast,
+  parentAction, toast, schemaOutOfDate, EXPECTED_SCHEMA_VERSION,
 } from '../store.js';
 import { db } from '../data.js';
 import { renderLedger } from './ledger.js';
@@ -172,6 +172,20 @@ export function renderParent() {
     tabs.append(btn);
   }
   wrap.append(tabs);
+
+  // A database behind the app is the parent's to fix, and the fix is one
+  // paste. Say that, instead of letting each screen fail its own way.
+  if (schemaOutOfDate()) {
+    wrap.append(
+      el('div', { class: 'banner', style: { background: 'var(--redo-bg)', color: 'var(--redo)' } },
+        el('span', {},
+          `⚠️ Your database is out of date (version ${state.schemaVersion}, this app needs `,
+          `${EXPECTED_SCHEMA_VERSION}). Some screens won't work until you re-run `,
+          el('code', {}, 'supabase/schema.sql'),
+          ' in the Supabase SQL Editor. Your data is not affected.'),
+      ),
+    );
+  }
 
   if (!state.snap?.household?.pin_is_set) {
     wrap.append(
