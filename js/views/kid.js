@@ -3,7 +3,7 @@
 // Tap a chore to mark it done. Tap it again to undo, while it's still waiting.
 // Nothing here can approve anything — the money only moves when a parent says so.
 
-import { el, formatMoney, contrastOn, ymd, friendlyDay } from '../util.js';
+import { el, formatMoney, contrastOn, ymd, addDays, dayOfWeek, friendlyDay, DAY_SHORT } from '../util.js';
 import { section, foldedSection, emptyState } from '../ui.js';
 import {
   state, currentChild, currency, goToPicker, instancesFor, balanceOf,
@@ -11,7 +11,22 @@ import {
 } from '../store.js';
 import { db } from '../data.js';
 
-function choreCard(inst, { onTap = null, tone = '' } = {}) {
+/**
+ * When this chore is due, in words a kid can act on. Every card gets one —
+ * without it, "must be done today" and "due Friday" look identical in a list.
+ */
+function duePill(inst, weekEnd) {
+  if (inst.due_date === null) {
+    // Anytime chores still have a real deadline: the end of the week.
+    return { text: `By ${DAY_SHORT[dayOfWeek(weekEnd)]}`, cls: 'pill--muted' };
+  }
+  const today = ymd();
+  if (inst.due_date === today) return { text: 'Today', cls: 'pill--today' };
+  if (inst.due_date < today) return { text: friendlyDay(inst.due_date), cls: 'pill--redo' };
+  return { text: friendlyDay(inst.due_date), cls: 'pill--muted' };
+}
+
+function choreCard(inst, { onTap = null, tone = '', weekEnd = null } = {}) {
   const sym = currency();
   const today = ymd();
   const isMissed = tone === 'expired';
@@ -26,12 +41,17 @@ function choreCard(inst, { onTap = null, tone = '' } = {}) {
   const right = el('div', { class: 'chore__right' });
   right.append(el('span', { class: 'chore__value' }, formatMoney(inst.value_cents, sym)));
 
-  if (isMissed) right.append(el('span', { class: 'pill pill--muted' }, friendlyDay(inst.due_date)));
-  else if (inst.status === 'submitted') right.append(el('span', { class: 'pill pill--waiting' }, '⏳ Waiting'));
-  else if (inst.status === 'approved') right.append(el('span', { class: 'pill pill--done' }, '✓ Earned'));
-  else if (inst.status === 'rejected') right.append(el('span', { class: 'pill pill--redo' }, '↻ Try again'));
-  else if (inst.due_date && inst.due_date !== today) {
+  if (isMissed) {
     right.append(el('span', { class: 'pill pill--muted' }, friendlyDay(inst.due_date)));
+  } else if (inst.status === 'submitted') {
+    right.append(el('span', { class: 'pill pill--waiting' }, '⏳ Waiting'));
+  } else if (inst.status === 'approved') {
+    right.append(el('span', { class: 'pill pill--done' }, '✓ Earned'));
+  } else {
+    // Still to do (pending or sent back) — always say when it's due.
+    if (inst.status === 'rejected') right.append(el('span', { class: 'pill pill--redo' }, '↻ Try again'));
+    const due = duePill(inst, weekEnd);
+    right.append(el('span', { class: `pill ${due.cls}` }, due.text));
   }
 
   const note = isMissed
@@ -99,16 +119,23 @@ export function renderKid() {
   const approved  = live.filter((i) => i.status === 'approved');
   const pending   = live.filter((i) => i.status === 'pending');
 
-  const dueNow   = pending.filter((i) => i.due_date !== null && i.due_date <= today);
+  // Four buckets, each answering a different question for the kid:
+  // what have I let slip, what must happen today, what has all week, what's coming.
+  const overdue  = pending.filter((i) => i.due_date !== null && i.due_date < today);
+  const dueToday = pending.filter((i) => i.due_date === today);
   const anytime  = pending.filter((i) => i.due_date === null);
   const upcoming = pending.filter((i) => i.due_date !== null && i.due_date > today);
 
+  const weekEnd = addDays(state.snap.weekStart, 6);
   const earnedThisWeek  = approved.reduce((sum, i) => sum + i.value_cents, 0);
   const waitingThisWeek = submitted.reduce((sum, i) => sum + i.value_cents, 0);
-  const doneToday = mine.filter(
-    (i) => (i.due_date === today || i.due_date === null) && ['approved', 'submitted'].includes(i.status),
-  ).length;
-  const totalToday = mine.filter((i) => i.due_date === today || i.due_date === null).length;
+
+  // "Today" counts only chores actually due today. Anytime-this-week chores
+  // used to be lumped in here, which made the ring impossible to finish: doing
+  // one moved the numerator but it was never really a today job.
+  const scheduledToday = mine.filter((i) => i.due_date === today);
+  const doneToday = scheduledToday.filter((i) => ['approved', 'submitted'].includes(i.status)).length;
+  const totalToday = scheduledToday.length;
 
   const wrap = el('div');
 
@@ -164,30 +191,60 @@ export function renderKid() {
   if (rejected.length) {
     wrap.append(section('Needs another look', `${rejected.length}`,
       el('div', { class: 'chores' },
-        ...rejected.map((i) => choreCard(i, { tone: 'rejected', onTap: () => markDone(i) })),
+        ...rejected.map((i) => choreCard(i, { tone: 'rejected', onTap: () => markDone(i), weekEnd })),
       ),
     ));
   }
 
-  // ---- today ----
-  const todayCards = [...dueNow, ...anytime];
-  wrap.append(section('To do', `${todayCards.length}`,
-    todayCards.length
-      ? el('div', { class: 'chores' },
-          ...todayCards.map((i) => choreCard(i, { onTap: () => markDone(i) })))
-      : expired.length
+  // ---- overdue but still allowed ----
+  // Only ever appears while "Allow late chores" is on; otherwise these have
+  // already moved to Missed.
+  if (overdue.length) {
+    wrap.append(section('Catch up', `${overdue.length}`,
+      el('div', { class: 'chores' },
+        ...overdue
+          .sort((a, b) => a.due_date.localeCompare(b.due_date))
+          .map((i) => choreCard(i, { onTap: () => markDone(i), weekEnd })),
+      ),
+    ));
+  }
+
+  // ---- due today ----
+  // Kept apart from "anytime" on purpose: these are the ones that stop
+  // counting if today ends without them being done.
+  if (dueToday.length) {
+    wrap.append(section('Due today', `${dueToday.length}`,
+      el('div', { class: 'chores' },
+        ...dueToday.map((i) => choreCard(i, { onTap: () => markDone(i), weekEnd })),
+      ),
+    ));
+  }
+
+  // ---- no fixed day, but must land before the week is out ----
+  if (anytime.length) {
+    wrap.append(section('Anytime this week', `${anytime.length}`,
+      el('div', { class: 'chores' },
+        ...anytime.map((i) => choreCard(i, { onTap: () => markDone(i), weekEnd })),
+      ),
+    ));
+  }
+
+  if (!overdue.length && !dueToday.length && !anytime.length) {
+    wrap.append(section('To do', null,
+      expired.length
         // Don't say "all caught up" when the only reason the list is empty is
         // that the chores ran out of time.
         ? emptyState('🕐', 'Nothing you can do right now',
             'The ones below ran out of time. New chores appear on their day.')
         : emptyState('🎉', 'All caught up!', 'Nothing left to do right now.'),
-  ));
+    ));
+  }
 
   // ---- waiting ----
   if (submitted.length) {
     wrap.append(section('Waiting to be checked', `${submitted.length}`,
       el('div', { class: 'chores' },
-        ...submitted.map((i) => choreCard(i, { tone: 'submitted', onTap: () => undo(i) })),
+        ...submitted.map((i) => choreCard(i, { tone: 'submitted', onTap: () => undo(i), weekEnd })),
       ),
     ));
   }
@@ -199,7 +256,7 @@ export function renderKid() {
       el('div', { class: 'chores' },
         ...upcoming
           .sort((a, b) => a.due_date.localeCompare(b.due_date))
-          .map((i) => choreCard(i)),
+          .map((i) => choreCard(i, { weekEnd })),
       ),
     ));
   }

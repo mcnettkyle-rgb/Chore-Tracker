@@ -416,6 +416,7 @@ button { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
+.pill--today   { background: var(--accent); color: var(--bg-elev); }
 .pill--waiting { background: var(--waiting-bg); color: var(--waiting); }
 .pill--done    { background: var(--done-bg);    color: var(--done); }
 .pill--redo    { background: var(--redo-bg);    color: var(--redo); }

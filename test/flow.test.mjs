@@ -40,8 +40,10 @@ await page.waitForSelector('.summary');
 check((await text()).includes('Hi Ava'), 'kid view greets Ava');
 await page.screenshot({ path: `${SHOT}/02-kid.png`, fullPage: true });
 
-// Grab the first non-auto-approve chore in the "To do" list.
-const firstChore = page.locator('.section:has(.section__title:text-is("To do")) .chore').first();
+// The first tappable chore, whichever bucket it landed in (Catch up / Due
+// today / Anytime this week).
+const ACTIONABLE = '.section:not(.fold) .chore:not([disabled]):not(.chore--submitted)';
+const firstChore = page.locator(ACTIONABLE).first();
 const choreName = (await firstChore.locator('.chore__name').textContent()).trim();
 const choreValue = (await firstChore.locator('.chore__value').textContent()).trim();
 console.log(`   (marking "${choreName}" worth ${choreValue})`);
@@ -64,7 +66,7 @@ await page.waitForTimeout(400);
 check(await page.locator(waitingSection).count() === 0, 'undo returned the chore to the to-do list');
 
 // re-submit for the approval flow
-await page.locator('.section:has(.section__title:text-is("To do")) .chore').first().click();
+await page.locator(ACTIONABLE).first().click();
 await page.waitForTimeout(400);
 
 // ---------------------------------------------------------------- parent

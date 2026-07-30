@@ -53,7 +53,8 @@ await page.waitForSelector('.picker');
 await page.click('.profile >> nth=0');
 await page.waitForSelector('.summary');
 
-const todo = sectionEl('To do');
+// Every non-folded section holding tappable chores, whatever it's called.
+const todo = '.section:not(.fold)';
 const missed = foldEl('Missed');
 
 const missedCount = await page.locator(missed).count();
@@ -114,7 +115,7 @@ check(await page.locator(foldEl('Missed')).count() === 0,
   'nothing is "Missed" once late chores are allowed again');
 
 // The LATE flag is a CSS ::after, so it isn't in textContent — check the class.
-const lateAgain = await page.locator(`${sectionEl('To do')} .chore--overdue`).count();
+const lateAgain = await page.locator('.section:not(.fold) .chore--overdue').count();
 check(lateAgain > 0, `late-but-doable chores are back in the to-do list, flagged LATE (${lateAgain})`);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL EXPIRED-CHORE TESTS PASSED');
