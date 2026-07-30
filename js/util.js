@@ -50,6 +50,13 @@ export function friendlyDay(s, today = ymd()) {
   return DAY_NAMES[dayOfWeek(s)];
 }
 
+/** "Thursday, July 30" — spelled out, so there's no ambiguity about which day. */
+export function formatLongDate(s) {
+  return parseYmd(s).toLocaleDateString(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric',
+  });
+}
+
 export function formatWeekRange(weekStart) {
   const end = addDays(weekStart, 6);
   const a = parseYmd(weekStart);

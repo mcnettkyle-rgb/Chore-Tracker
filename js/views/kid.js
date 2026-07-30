@@ -3,7 +3,10 @@
 // Tap a chore to mark it done. Tap it again to undo, while it's still waiting.
 // Nothing here can approve anything — the money only moves when a parent says so.
 
-import { el, formatMoney, contrastOn, ymd, addDays, dayOfWeek, friendlyDay, DAY_SHORT } from '../util.js';
+import {
+  el, formatMoney, contrastOn, ymd, addDays, dayOfWeek, friendlyDay,
+  formatLongDate, DAY_SHORT,
+} from '../util.js';
 import { section, foldedSection, emptyState } from '../ui.js';
 import {
   state, currentChild, currency, goToPicker, instancesFor, balanceOf,
@@ -217,7 +220,7 @@ export function renderKid() {
   // Kept apart from "anytime" on purpose: these are the ones that stop
   // counting if today ends without them being done.
   if (dueToday.length) {
-    wrap.append(section('Due today', `${dueToday.length}`,
+    wrap.append(section('Due today', `${formatLongDate(today)} · ${dueToday.length}`,
       el('div', { class: 'chores' },
         ...dueToday.map((i) => choreCard(i, { onTap: () => markDone(i), weekEnd })),
       ),
@@ -226,7 +229,7 @@ export function renderKid() {
 
   // ---- no fixed day, but must land before the week is out ----
   if (anytime.length) {
-    wrap.append(section('Anytime this week', `${anytime.length}`,
+    wrap.append(section('Anytime this week', `by ${formatLongDate(weekEnd)} · ${anytime.length}`,
       el('div', { class: 'chores' },
         ...anytime.map((i) => choreCard(i, { onTap: () => markDone(i), weekEnd })),
       ),
