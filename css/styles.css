@@ -432,6 +432,17 @@ button { font: inherit; color: inherit; }
 .chore--rejected { border-color: var(--redo); background: var(--redo-bg); }
 .chore--rejected .chore__emoji { background: rgba(185,28,28,.12); }
 
+/* Missed: visible so the week reads honestly, but plainly not actionable. */
+.chore--expired {
+  background: transparent;
+  border-style: dashed;
+  opacity: .62;
+}
+
+.chore--expired .chore__emoji { filter: grayscale(1); background: var(--bg-sunken); }
+.chore--expired .chore__name { color: var(--ink-soft); text-decoration: line-through; }
+.chore--expired .chore__value { color: var(--ink-faint); text-decoration: line-through; }
+
 .chore--overdue .chore__name::after {
   content: "late";
   margin-left: 8px;

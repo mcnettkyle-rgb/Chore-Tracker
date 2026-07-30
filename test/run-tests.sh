@@ -72,6 +72,10 @@ echo "==> approval flow"
 node "$HERE/flow.test.mjs"
 
 echo
+echo "==> expired chores"
+node "$HERE/expired.test.mjs"
+
+echo
 echo "==> configuration"
 node "$HERE/config.test.mjs"
 

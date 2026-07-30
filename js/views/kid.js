@@ -7,14 +7,17 @@ import { el, formatMoney, contrastOn, ymd, friendlyDay } from '../util.js';
 import { section, foldedSection, emptyState } from '../ui.js';
 import {
   state, currentChild, currency, goToPicker, instancesFor, balanceOf,
-  kidAction, toast,
+  kidAction, toast, isExpired,
 } from '../store.js';
 import { db } from '../data.js';
 
 function choreCard(inst, { onTap = null, tone = '' } = {}) {
   const sym = currency();
   const today = ymd();
-  const overdue = inst.due_date && inst.due_date < today && ['pending', 'rejected'].includes(inst.status);
+  const isMissed = tone === 'expired';
+  // "LATE" means "you can still do this" — pointless once it's in Missed.
+  const overdue = !isMissed && inst.due_date && inst.due_date < today
+    && ['pending', 'rejected'].includes(inst.status);
 
   const classes = ['chore'];
   if (tone) classes.push(`chore--${tone}`);
@@ -23,18 +26,21 @@ function choreCard(inst, { onTap = null, tone = '' } = {}) {
   const right = el('div', { class: 'chore__right' });
   right.append(el('span', { class: 'chore__value' }, formatMoney(inst.value_cents, sym)));
 
-  if (inst.status === 'submitted') right.append(el('span', { class: 'pill pill--waiting' }, '⏳ Waiting'));
+  if (isMissed) right.append(el('span', { class: 'pill pill--muted' }, friendlyDay(inst.due_date)));
+  else if (inst.status === 'submitted') right.append(el('span', { class: 'pill pill--waiting' }, '⏳ Waiting'));
   else if (inst.status === 'approved') right.append(el('span', { class: 'pill pill--done' }, '✓ Earned'));
   else if (inst.status === 'rejected') right.append(el('span', { class: 'pill pill--redo' }, '↻ Try again'));
   else if (inst.due_date && inst.due_date !== today) {
     right.append(el('span', { class: 'pill pill--muted' }, friendlyDay(inst.due_date)));
   }
 
-  const note = inst.status === 'rejected' && inst.review_note
-    ? inst.review_note
-    : inst.status === 'submitted'
-      ? 'Marked done — tap to undo'
-      : null;
+  const note = isMissed
+    ? 'Ran out of time'
+    : inst.status === 'rejected' && inst.review_note
+      ? inst.review_note
+      : inst.status === 'submitted'
+        ? 'Marked done — tap to undo'
+        : null;
 
   const body = el('div', { class: 'chore__body' },
     el('div', { class: 'chore__name' }, inst.chore_name),
@@ -83,10 +89,15 @@ export function renderKid() {
   const today = ymd();
   const mine = instancesFor(child.id);
 
-  const rejected  = mine.filter((i) => i.status === 'rejected');
-  const submitted = mine.filter((i) => i.status === 'submitted');
-  const approved  = mine.filter((i) => i.status === 'approved');
-  const pending   = mine.filter((i) => i.status === 'pending');
+  // Chores whose window has closed can't be submitted any more, so they must
+  // not sit in the to-do list looking tappable.
+  const expired   = mine.filter(isExpired);
+  const live      = mine.filter((i) => !isExpired(i));
+
+  const rejected  = live.filter((i) => i.status === 'rejected');
+  const submitted = live.filter((i) => i.status === 'submitted');
+  const approved  = live.filter((i) => i.status === 'approved');
+  const pending   = live.filter((i) => i.status === 'pending');
 
   const dueNow   = pending.filter((i) => i.due_date !== null && i.due_date <= today);
   const anytime  = pending.filter((i) => i.due_date === null);
@@ -164,7 +175,12 @@ export function renderKid() {
     todayCards.length
       ? el('div', { class: 'chores' },
           ...todayCards.map((i) => choreCard(i, { onTap: () => markDone(i) })))
-      : emptyState('🎉', 'All caught up!', 'Nothing left to do right now.'),
+      : expired.length
+        // Don't say "all caught up" when the only reason the list is empty is
+        // that the chores ran out of time.
+        ? emptyState('🕐', 'Nothing you can do right now',
+            'The ones below ran out of time. New chores appear on their day.')
+        : emptyState('🎉', 'All caught up!', 'Nothing left to do right now.'),
   ));
 
   // ---- waiting ----
@@ -184,6 +200,20 @@ export function renderKid() {
         ...upcoming
           .sort((a, b) => a.due_date.localeCompare(b.due_date))
           .map((i) => choreCard(i)),
+      ),
+    ));
+  }
+
+  // ---- missed (folded: visible, but out of the way and not tappable) ----
+  if (expired.length) {
+    const lost = expired.reduce((sum, i) => sum + i.value_cents, 0);
+    wrap.append(foldedSection('Missed', `${expired.length} · ${formatMoney(lost, sym)}`,
+      el('p', { class: 'hint', style: { margin: '10px 2px' } },
+        "These ran out of time and can't be done now. They start fresh next week."),
+      el('div', { class: 'chores' },
+        ...expired
+          .sort((a, b) => a.due_date.localeCompare(b.due_date))
+          .map((i) => choreCard(i, { tone: 'expired' })),
       ),
     ));
   }

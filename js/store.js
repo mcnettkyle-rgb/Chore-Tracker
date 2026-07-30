@@ -4,7 +4,7 @@
 // five years with nothing installed. Views are plain functions that return DOM.
 
 import { db } from './data.js';
-import { ymd, weekStartFor } from './util.js';
+import { ymd, weekStartFor, daysBetween } from './util.js';
 
 const PROFILE_KEY = 'chore-tracker-profile';   // remembers whose tablet this is
 const TOKEN_KEY = 'chore-tracker-parent';      // sessionStorage: gone when the browser closes
@@ -110,6 +110,23 @@ export function pendingQueue() {
 
 export function instancesFor(childId) {
   return (state.snap?.instances ?? []).filter((i) => i.child_id === childId);
+}
+
+/**
+ * Has this chore's window closed for good?
+ *
+ * Deliberately mirrors the late check inside submit_chore() in schema.sql. The
+ * two must agree: if the UI offers a chore the database will refuse, the kid
+ * taps it and gets an error, which is the behaviour this exists to prevent.
+ *
+ * Nothing ever expires while "Allow late chores" is on, which is the default.
+ */
+export function isExpired(inst) {
+  if (!inst.due_date) return false;                                  // anytime / one-off
+  if (!['pending', 'rejected'].includes(inst.status)) return false;  // already dealt with
+  const s = settings();
+  if (s.allow_late_submission !== false) return false;
+  return daysBetween(inst.due_date, ymd()) > (s.late_grace_days ?? 0);
 }
 
 // ---------------------------------------------------------------------
