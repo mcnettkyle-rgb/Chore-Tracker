@@ -473,6 +473,15 @@ $$;
 -- Week generation
 -- =====================================================================
 
+-- Identifies one generated chore: which assignment, for whom, on what day.
+-- Comparing these strings is how generate_week() spots instances the template
+-- no longer calls for.
+create or replace function want_key(p_assignment uuid, p_child uuid, p_due date)
+returns text
+language sql
+immutable
+as $$ select p_assignment::text || '|' || p_child::text || '|' || coalesce(p_due::text, '-'); $$;
+
 -- Materialises chore_instances for a week from the active template.
 -- Idempotent: safe to call on every page load, so there is no cron job and
 -- no way to "miss" a week.
@@ -495,6 +504,9 @@ declare
   v_created  int := 0;
   v_removed  int := 0;
   v_hist     date;
+  -- Every (assignment, child, day) the template currently calls for. Built as
+  -- generation runs, then used to sweep away anything that no longer belongs.
+  v_want     text[] := '{}';
 begin
   v_ws     := week_start_for(p_any_date);
   v_ws_dow := extract(dow from v_ws)::int;
@@ -503,24 +515,6 @@ begin
   -- Without this, start_fresh() would delete a trial run's leftovers and the
   -- next page load would put them straight back.
   v_hist := nullif(get_settings()->>'history_start_date', '')::date;
-
-  -- Drop untouched chores whose template row was since switched off, so
-  -- unscheduling a chore mid-week actually clears it from the kid's list.
-  -- Anything submitted/approved/rejected is history and stays put.
-  delete from chore_instances ci
-   where ci.week_start = v_ws
-     and ci.status = 'pending'
-     and ci.assignment_id is not null
-     and not exists (
-       select 1
-         from assignments asg
-         join chores c on c.id = asg.chore_id
-        where asg.id = ci.assignment_id
-          and asg.active and c.active
-          and asg.effective_from <= v_ws + 6
-          and (asg.effective_to is null or asg.effective_to >= v_ws)
-     );
-  get diagnostics v_removed = row_count;
 
   for a in
     select asg.*,
@@ -565,6 +559,7 @@ begin
       foreach v_dow in array a.days_of_week loop
         v_due := v_ws + (((v_dow - v_ws_dow) + 7) % 7);
         continue when v_hist is not null and v_due < v_hist;
+        v_want := v_want || want_key(a.id, v_child, v_due);
         insert into chore_instances
           (assignment_id, chore_id, child_id, week_start, due_date,
            value_cents, chore_name, chore_emoji)
@@ -577,6 +572,7 @@ begin
 
     elsif a.schedule_type = 'anytime' then
       continue when v_hist is not null and v_ws + 6 < v_hist;
+      v_want := v_want || want_key(a.id, v_child, null);
       insert into chore_instances
         (assignment_id, chore_id, child_id, week_start, due_date,
          value_cents, chore_name, chore_emoji)
@@ -588,6 +584,7 @@ begin
 
     elsif a.schedule_type = 'oneoff' and week_start_for(a.oneoff_week) = v_ws then
       continue when v_hist is not null and v_ws + 6 < v_hist;
+      v_want := v_want || want_key(a.id, v_child, null);
       insert into chore_instances
         (assignment_id, chore_id, child_id, week_start, due_date,
          value_cents, chore_name, chore_emoji)
@@ -598,6 +595,24 @@ begin
       v_created := v_created + (case when found then 1 else 0 end);
     end if;
   end loop;
+
+  -- Sweep away untouched chores the template no longer calls for.
+  --
+  -- Checking only "is the assignment still active?" was not enough: reassign a
+  -- chore from one child to the other, or change which days it falls on, and
+  -- the assignment is still perfectly active while the instances it produced
+  -- are now wrong. That left the chore showing on both kids' lists at once.
+  -- Comparing against what generation actually just produced catches every
+  -- version of this -- reassigned, rescheduled, or switched off entirely.
+  --
+  -- Only 'pending' rows are eligible. Anything submitted, approved or rejected
+  -- is history and stays, even if the template has since moved on.
+  delete from chore_instances ci
+   where ci.week_start = v_ws
+     and ci.status = 'pending'
+     and ci.assignment_id is not null
+     and not (want_key(ci.assignment_id, ci.child_id, ci.due_date) = any (v_want));
+  get diagnostics v_removed = row_count;
 
   return jsonb_build_object('week_start', v_ws, 'created', v_created, 'removed', v_removed);
 end;
@@ -1180,6 +1195,7 @@ $$;
 -- =====================================================================
 grant execute on function
   schema_version(),
+  want_key(uuid, uuid, date),
   week_start_for(date),
   get_settings(),
   parent_status(),

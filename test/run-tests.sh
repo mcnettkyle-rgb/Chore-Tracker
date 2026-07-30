@@ -72,6 +72,10 @@ echo "==> renaming children"
 node "$HERE/rename.test.mjs"
 
 echo
+echo "==> reassigning a chore"
+node "$HERE/reassign.test.mjs"
+
+echo
 echo "==> approval flow"
 node "$HERE/flow.test.mjs"
 

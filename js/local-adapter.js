@@ -197,13 +197,6 @@ export class LocalAdapter {
       );
     };
 
-    // Untouched chores whose template row was switched off disappear again.
-    db.chore_instances = db.chore_instances.filter((ci) => {
-      if (ci.week_start !== ws || ci.status !== 'pending' || !ci.assignment_id) return true;
-      const a = db.assignments.find((x) => x.id === ci.assignment_id);
-      return !!a && isLive(a);
-    });
-
     const has = (assignmentId, childId, dueDate) =>
       db.chore_instances.some(
         (ci) =>
@@ -215,9 +208,17 @@ export class LocalAdapter {
 
     const hist = settings.history_start_date || null;
 
+    // Every (assignment, child, day) the template currently calls for, so the
+    // sweep below can spot instances that no longer belong. Same idea as
+    // want_key() in schema.sql.
+    const want = new Set();
+    const key = (assignmentId, childId, dueDate) =>
+      `${assignmentId}|${childId}|${dueDate ?? '-'}`;
+
     const add = (a, chore, childId, dueDate) => {
       // Matches generate_week(): never regenerate what start_fresh() cleared.
       if (hist && (dueDate ?? weekEnd) < hist) return;
+      want.add(key(a.id, childId, dueDate));
       if (has(a.id, childId, dueDate)) return;
       db.chore_instances.push({
         id: uuid(),
@@ -261,6 +262,16 @@ export class LocalAdapter {
         if (weekStartFor(a.oneoff_week, settings.week_start_day ?? 0) === ws) add(a, chore, childId, null);
       }
     }
+
+    // Sweep untouched chores the template no longer calls for. Checking only
+    // whether the assignment still exists missed the common case: reassign a
+    // chore to the other child and the assignment is still active while the
+    // instances it produced are now wrong, so it showed on both kids at once.
+    db.chore_instances = db.chore_instances.filter((ci) => {
+      if (ci.week_start !== ws || ci.status !== 'pending' || !ci.assignment_id) return true;
+      return want.has(key(ci.assignment_id, ci.child_id, ci.due_date));
+    });
+
     return ws;
   }
 

@@ -4,18 +4,9 @@
 
 import { el, formatMoney, contrastOn, ymd } from '../util.js';
 import { emptyState } from '../ui.js';
-import { state, chooseChild, enterParent, currency, toast, refresh } from '../store.js';
+import { state, chooseChild, enterParent, currency, toast, refresh, dueTodayCount } from '../store.js';
 import { db, isDemo } from '../data.js';
 import { openPinPad, openSetPin } from './pin.js';
-
-function choresLeftToday(childId) {
-  const today = ymd();
-  return (state.snap?.instances ?? []).filter(
-    (i) => i.child_id === childId &&
-           ['pending', 'rejected'].includes(i.status) &&
-           (i.due_date === null || i.due_date <= today),
-  ).length;
-}
 
 async function onParentTap() {
   const result = await openPinPad({
@@ -67,7 +58,7 @@ export function renderPicker() {
   }
 
   for (const child of kids) {
-    const left = choresLeftToday(child.id);
+    const left = dueTodayCount(child.id);
     grid.append(
       el('button', {
         class: 'profile',

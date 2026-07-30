@@ -7,7 +7,7 @@ import { el, formatMoney, contrastOn, ymd, addDays, dayOfWeek, friendlyDay, DAY_
 import { section, foldedSection, emptyState } from '../ui.js';
 import {
   state, currentChild, currency, goToPicker, instancesFor, balanceOf,
-  kidAction, toast, isExpired,
+  kidAction, toast, isExpired, dueTodayCount,
 } from '../store.js';
 import { db } from '../data.js';
 
@@ -133,9 +133,13 @@ export function renderKid() {
   // "Today" counts only chores actually due today. Anytime-this-week chores
   // used to be lumped in here, which made the ring impossible to finish: doing
   // one moved the numerator but it was never really a today job.
-  const scheduledToday = mine.filter((i) => i.due_date === today);
-  const doneToday = scheduledToday.filter((i) => ['approved', 'submitted'].includes(i.status)).length;
+  //
+  // The remaining count comes from the same helper the profile picker uses, so
+  // the tile and this header always agree.
+  const scheduledToday = mine.filter((i) => i.due_date === today && !isExpired(i));
   const totalToday = scheduledToday.length;
+  const remainingToday = dueTodayCount(child.id);
+  const doneToday = totalToday - remainingToday;
 
   const wrap = el('div');
 
@@ -154,9 +158,9 @@ export function renderKid() {
         el('span', { class: 'topbar__sub' },
           totalToday === 0
             ? 'Nothing scheduled today'
-            : doneToday >= totalToday
+            : remainingToday === 0
               ? 'Everything done today — nice work 🎉'
-              : `${totalToday - doneToday} left to do today`),
+              : `${remainingToday} left to do today`),
       ),
       el('button', { class: 'btn btn--ghost', type: 'button', onclick: goToPicker }, 'Switch'),
     ),

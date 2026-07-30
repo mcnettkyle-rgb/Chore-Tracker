@@ -125,6 +125,24 @@ export function instancesFor(childId) {
 }
 
 /**
+ * Chores due today that still need doing.
+ *
+ * Shared by the profile picker and the kid's own header so the two can never
+ * disagree. The picker used to count anything not yet done with a due date of
+ * today *or earlier*, which meant it included chores that had already expired
+ * into "Missed" — a kid saw "29 to do today" over a list of six.
+ */
+export function dueTodayCount(childId) {
+  const today = ymd();
+  return (state.snap?.instances ?? []).filter(
+    (i) => i.child_id === childId
+      && i.due_date === today
+      && ['pending', 'rejected'].includes(i.status)
+      && !isExpired(i),
+  ).length;
+}
+
+/**
  * Has this chore's window closed for good?
  *
  * Deliberately mirrors the late check inside submit_chore() in schema.sql. The
