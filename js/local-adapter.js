@@ -455,6 +455,24 @@ export class LocalAdapter {
     return { ok: true, approved: count, amount_cents: sum };
   }
 
+  /** Mirrors unapprove_chore(): back to not-done, money taken back, no note. */
+  async unapproveChore(token, id) {
+    const db = this.#read();
+    this.#requireParent(db, token);
+    const inst = db.chore_instances.find((c) => c.id === id);
+    if (!inst || !['approved', 'submitted'].includes(inst.status)) return { ok: true, noop: true };
+
+    inst.status = 'pending';
+    inst.submitted_at = null;
+    inst.reviewed_at = null;
+    inst.review_note = null;
+    db.ledger_entries = db.ledger_entries.filter(
+      (l) => !(l.chore_instance_id === id && l.type === 'earning'),
+    );
+    this.#commit(db);
+    return { ok: true, status: 'pending', amount_cents: inst.value_cents };
+  }
+
   async rejectChore(token, id, note) {
     const db = this.#read();
     this.#requireParent(db, token);

@@ -133,13 +133,44 @@ export function instancesFor(childId) {
  * into "Missed" — a kid saw "29 to do today" over a list of six.
  */
 export function dueTodayCount(childId) {
+  return outstanding(childId).dueToday;
+}
+
+/**
+ * What a child still has left, split by urgency.
+ *
+ * The profile tile and the kid's own header both read from this, so they can't
+ * drift apart. Counting only today's dated chores was not enough on its own:
+ * with an "anytime this week" chore still outstanding, a kid who had finished
+ * everything dated saw "All done today 🎉" while three chores sat waiting.
+ */
+export function outstanding(childId) {
   const today = ymd();
-  return (state.snap?.instances ?? []).filter(
+  const mine = (state.snap?.instances ?? []).filter(
     (i) => i.child_id === childId
-      && i.due_date === today
       && ['pending', 'rejected'].includes(i.status)
       && !isExpired(i),
-  ).length;
+  );
+
+  const dueToday = mine.filter((i) => i.due_date === today).length;
+  const overdue = mine.filter((i) => i.due_date !== null && i.due_date < today).length;
+  const anytime = mine.filter((i) => i.due_date === null).length;
+
+  return { dueToday, overdue, anytime, actionable: dueToday + overdue + anytime };
+}
+
+/**
+ * One line describing where a child stands, in priority order: what's due
+ * today, then what has slipped, then what's owed by the end of the week.
+ * Only claims "all done" when there is genuinely nothing left to do.
+ */
+export function outstandingLabel(childId, { short = false } = {}) {
+  const { dueToday, overdue, anytime } = outstanding(childId);
+
+  if (dueToday) return short ? `${dueToday} to do today` : `${dueToday} left to do today`;
+  if (overdue)  return short ? `${overdue} to catch up` : `${overdue} to catch up on`;
+  if (anytime)  return short ? `${anytime} left this week` : `${anytime} left to do this week`;
+  return short ? 'All done 🎉' : 'Everything done — nice work 🎉';
 }
 
 /**

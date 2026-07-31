@@ -4,7 +4,7 @@
 
 import { el, formatMoney, contrastOn, ymd } from '../util.js';
 import { emptyState } from '../ui.js';
-import { state, chooseChild, enterParent, currency, toast, refresh, dueTodayCount } from '../store.js';
+import { state, chooseChild, enterParent, currency, toast, refresh, outstandingLabel } from '../store.js';
 import { db, isDemo } from '../data.js';
 import { openPinPad, openSetPin } from './pin.js';
 
@@ -58,7 +58,6 @@ export function renderPicker() {
   }
 
   for (const child of kids) {
-    const left = dueTodayCount(child.id);
     grid.append(
       el('button', {
         class: 'profile',
@@ -71,8 +70,7 @@ export function renderPicker() {
           style: { background: child.color, color: contrastOn(child.color) },
         }, child.emoji),
         el('span', { class: 'profile__name' }, child.name),
-        el('span', { class: 'profile__meta' },
-          left === 0 ? 'All done today 🎉' : `${left} to do today`),
+        el('span', { class: 'profile__meta' }, outstandingLabel(child.id, { short: true })),
       ),
     );
   }

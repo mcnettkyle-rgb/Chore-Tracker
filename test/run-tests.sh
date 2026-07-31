@@ -88,6 +88,10 @@ echo "==> fresh start"
 node "$HERE/fresh-start.test.mjs"
 
 echo
+echo "==> undoing an approval"
+node "$HERE/undo-approval.test.mjs"
+
+echo
 echo "==> parent dashboard"
 node "$HERE/dashboard.test.mjs"
 

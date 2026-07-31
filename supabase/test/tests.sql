@@ -166,6 +166,38 @@ exception when others then
 end;
 
 -- ---------------------------------------------------------------------
+raise notice '--- undoing an approval ---';
+select ci.id, ci.child_id, ci.value_cents into v_inst2, v_child, v_val
+  from chore_instances ci where ci.status = 'approved' limit 1;
+
+select coalesce(sum(amount_cents), 0) into v_bal from ledger_entries where child_id = v_child;
+perform unapprove_chore(v_tok, v_inst2);
+
+select status into v_status from chore_instances where id = v_inst2;
+perform assert(v_status = 'pending', 'undo puts the chore back to not-done');
+perform assert((select count(*) from chore_instances
+                 where id = v_inst2 and submitted_at is null and reviewed_at is null
+                   and review_note is null) = 1,
+               'undo leaves no note or timestamps behind — it is not a rejection');
+
+select coalesce(sum(amount_cents), 0) into v_bal2 from ledger_entries where child_id = v_child;
+perform assert(v_bal2 = v_bal - v_val, 'undo takes back exactly what the chore earned');
+
+-- The kid can simply do it again.
+perform submit_chore(v_inst2);
+perform approve_chore(v_tok, v_inst2);
+select count(*) into v_n from ledger_entries
+ where chore_instance_id = v_inst2 and type = 'earning';
+perform assert(v_n = 1, 'redoing it afterwards earns exactly once');
+
+begin
+  perform unapprove_chore('forged-token', v_inst2);
+  perform assert(false, 'a forged token must not be able to undo an approval');
+exception when sqlstate '28000' then
+  raise notice 'PASS  undo requires a real parent session';
+end;
+
+-- ---------------------------------------------------------------------
 raise notice '--- lifetime totals ---';
 
 -- Pick a child who has actually earned something, rather than assuming which

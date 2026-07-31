@@ -178,6 +178,16 @@ Every write goes through a database function:
 This is built to stop a curious ten-year-old with devtools, which is the actual
 threat model here. It is not bank-grade, and no real money moves through it.
 
+### Approving is reversible
+
+**To check → Approved this week → Undo** puts a chore back on the kid's list as
+not done and takes the money back. It leaves no note, because it means "that
+was a mistake" rather than "you did this badly" — that's what **Needs redo** in
+the queue is for.
+
+This matters most for chores marked "pay without checking", which pay the
+instant a kid taps them. Without an undo, a mis-tap there is permanent.
+
 ### Prices are snapshotted
 
 Each generated chore records the name, icon and value it had at the time.
@@ -253,6 +263,7 @@ Everything below lives in **Parent → Schedule** or **Parent → Settings**:
 | Completion rate, missed chores, lifetime earnings | Progress → pick a timeframe |
 | Change the PIN | Settings → Parent PIN |
 | Clear a trial run before going live | Settings → Going live |
+| Undo a chore approved by mistake | To check → Approved this week → Undo |
 
 Archiving a chore keeps all its history. Removing a child keeps their balance,
 so you can add them back.
@@ -262,7 +273,7 @@ so you can add them back.
 ## Tests
 
 **Database** — spins up a throwaway local Postgres, applies the real schema, and
-runs 178 assertions. Never touches your Supabase project. Needs `postgresql-16`.
+runs 188 assertions. Never touches your Supabase project. Needs `postgresql-16`.
 
 ```bash
 ./supabase/test/run-tests.sh
@@ -276,7 +287,7 @@ cluster grants `anon` the same privileges Supabase does, so those last checks
 exercise row-level security rather than a missing `GRANT`.
 
 **Browser** — drives the real UI in Chromium, against a demo-mode copy so it
-never touches your data. 149 assertions. Needs Playwright.
+never touches your data. 163 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh

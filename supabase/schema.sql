@@ -56,12 +56,13 @@ end $$;
 --   2  lifetime_totals() for the parent dashboard
 --   3  start_fresh() and the history_start_date setting
 --   4  household_today(): dates judged in the family's timezone, not UTC
+--   5  unapprove_chore() for undoing an accidental approval
 -- ---------------------------------------------------------------------
 create or replace function schema_version()
 returns int
 language sql
 immutable
-as $$ select 4; $$;
+as $$ select 5; $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
@@ -781,6 +782,50 @@ begin
 end;
 $$;
 
+-- Undo an approval: put the chore back to not-done and take the money back.
+--
+-- Distinct from reject_chore(), which means "you did this badly, do it again"
+-- and shows the kid a note. This one means "that was a mistake, it never
+-- happened" — it leaves no note and no trace on the kid's screen beyond the
+-- chore reappearing on their list.
+--
+-- Needed most for auto-approve chores, which pay the instant they're tapped:
+-- a mis-tap there is otherwise permanent.
+create or replace function unapprove_chore(p_token text, p_instance_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_inst chore_instances%rowtype;
+begin
+  perform require_parent(p_token);
+
+  update chore_instances
+     set status       = 'pending',
+         submitted_at = null,
+         reviewed_at  = null,
+         review_note  = null
+   where id = p_instance_id
+     and status in ('approved', 'submitted')
+  returning * into v_inst;
+
+  if not found then
+    return jsonb_build_object('ok', true, 'noop', true);
+  end if;
+
+  -- Take back only what this chore earned. A payout already made is left
+  -- alone: the balance can go negative, which is the honest record of having
+  -- handed over money for something that didn't happen.
+  delete from ledger_entries
+   where chore_instance_id = p_instance_id and type = 'earning';
+
+  return jsonb_build_object('ok', true, 'status', 'pending',
+                            'amount_cents', v_inst.value_cents);
+end;
+$$;
+
 create or replace function approve_all(p_token text, p_child_id uuid default null)
 returns jsonb
 language plpgsql
@@ -1226,6 +1271,7 @@ grant execute on function
   submit_chore(uuid),
   unsubmit_chore(uuid),
   approve_chore(text, uuid),
+  unapprove_chore(text, uuid),
   reject_chore(text, uuid, text),
   approve_all(text, uuid),
   record_payout(text, uuid, int, text),

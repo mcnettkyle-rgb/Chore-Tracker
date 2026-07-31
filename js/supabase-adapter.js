@@ -207,6 +207,9 @@ export class SupabaseAdapter {
   approveChore(token, id) {
     return this.#rpc('approve_chore', { p_token: token, p_instance_id: id });
   }
+  unapproveChore(token, id) {
+    return this.#rpc('unapprove_chore', { p_token: token, p_instance_id: id });
+  }
   rejectChore(token, id, note) {
     return this.#rpc('reject_chore', { p_token: token, p_instance_id: id, p_note: note ?? null });
   }

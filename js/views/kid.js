@@ -10,7 +10,7 @@ import {
 import { section, foldedSection, emptyState } from '../ui.js';
 import {
   state, currentChild, currency, goToPicker, instancesFor, balanceOf,
-  kidAction, toast, isExpired, dueTodayCount,
+  kidAction, toast, isExpired, dueTodayCount, outstandingLabel,
 } from '../store.js';
 import { db } from '../data.js';
 
@@ -158,12 +158,7 @@ export function renderKid() {
       }, child.emoji),
       el('h1', { class: 'topbar__title' },
         `Hi ${child.name}!`,
-        el('span', { class: 'topbar__sub' },
-          totalToday === 0
-            ? 'Nothing scheduled today'
-            : remainingToday === 0
-              ? 'Everything done today — nice work 🎉'
-              : `${remainingToday} left to do today`),
+        el('span', { class: 'topbar__sub' }, outstandingLabel(child.id)),
       ),
       el('button', { class: 'btn btn--ghost', type: 'button', onclick: goToPicker }, 'Switch'),
     ),

@@ -53,12 +53,16 @@ check(beforeFirst.names.includes(CHORE), `${first} starts with "${CHORE}"`);
 check(!beforeSecond.names.includes(CHORE), `${second} does not`);
 
 // ---- the picker tile must agree with the kid's own header ----
-const tileText = await page.locator(`.profile:has-text("${first}") .profile__meta`).textContent();
+const tileText = (await page.locator(`.profile:has-text("${first}") .profile__meta`).textContent()).trim();
 const tileCount = Number((tileText.match(/\d+/) ?? [0])[0]);
-check(tileCount === beforeFirst.dueToday,
-  `picker tile matches the kid's "Due today" list (tile ${tileCount}, list ${beforeFirst.dueToday})`);
+check(/to do today/.test(tileText) ? tileCount === beforeFirst.dueToday : true,
+  `picker tile matches the kid's "Due today" list ("${tileText}", list ${beforeFirst.dueToday})`);
 check(beforeFirst.tally.startsWith(String(tileCount)) || beforeFirst.tally.includes('done'),
   `the kid's header agrees too ("${beforeFirst.tally}")`);
+
+// A tile must never claim "all done" while anything is still outstanding.
+check(!/all done/i.test(tileText) || beforeFirst.names.length === 0,
+  `tile does not claim "all done" with ${beforeFirst.names.length} chores still listed ("${tileText}")`);
 
 // ---- reassign it to the other child ----
 await page.click('.profile--parent');
@@ -101,8 +105,9 @@ check(!reloadFirst.names.includes(CHORE),
 for (const name of [first, second]) {
   const info = await choresFor(name);
   const tile = await page.locator(`.profile:has-text("${name}") .profile__meta`).textContent();
-  const n = Number((tile.match(/\d+/) ?? [0])[0]);
-  check(n === info.dueToday, `${name}: tile (${n}) matches "Due today" (${info.dueToday})`);
+  const t = tile.trim();
+  check(!/all done/i.test(t) || info.names.length === 0,
+    `${name}: tile "${t}" is honest about ${info.names.length} outstanding chores`);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL REASSIGN TESTS PASSED');

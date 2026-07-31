@@ -13,4 +13,5 @@
 //   2  lifetime_totals() for the parent dashboard
 //   3  start_fresh() and the history_start_date setting
 //   4  household_today(): dates judged in the family's timezone, not UTC
-export const EXPECTED_SCHEMA_VERSION = 4;
+//   5  unapprove_chore() for undoing an accidental approval
+export const EXPECTED_SCHEMA_VERSION = 5;

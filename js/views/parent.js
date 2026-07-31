@@ -4,7 +4,7 @@
 // leaves this screen with an Approve.
 
 import { el, formatMoney, timeAgo, contrastOn } from '../util.js';
-import { section, emptyState, childChip, promptDialog, confirmDialog } from '../ui.js';
+import { section, foldedSection, emptyState, childChip, promptDialog, confirmDialog } from '../ui.js';
 import {
   state, setState, currency, childById, exitParent, pendingQueue,
   parentAction, toast, schemaOutOfDate, EXPECTED_SCHEMA_VERSION,
@@ -98,12 +98,77 @@ function reviewCard(inst) {
   );
 }
 
+async function undoApproval(inst) {
+  const child = childById(inst.child_id);
+  const ok = await confirmDialog({
+    title: 'Undo this?',
+    message: `"${inst.chore_name}" goes back on ${child?.name ?? 'their'} list as not done, `
+      + `and the ${formatMoney(inst.value_cents, currency())} comes off their balance. `
+      + 'They see no note about it.',
+    confirmLabel: 'Undo it',
+  });
+  if (!ok) return;
+
+  try {
+    await parentAction((token) => db.unapproveChore(token, inst.id));
+    toast(`Undone — ${formatMoney(inst.value_cents, currency())} taken back`);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+/**
+ * Chores approved this week, newest first.
+ *
+ * Exists because approving is otherwise a one-way door — and an auto-approve
+ * chore pays the instant a kid taps it, so a mis-tap is permanent with nowhere
+ * in the UI to reach it.
+ */
+function recentlyApproved() {
+  return (state.snap?.instances ?? [])
+    .filter((i) => i.status === 'approved')
+    .sort((a, b) => String(b.reviewed_at ?? '').localeCompare(String(a.reviewed_at ?? '')))
+    .slice(0, 12);
+}
+
+function approvedSection() {
+  const done = recentlyApproved();
+  if (!done.length) return null;
+
+  const rows = el('div', { class: 'rows' });
+  for (const inst of done) {
+    const child = childById(inst.child_id);
+    rows.append(
+      el('div', { class: 'row' },
+        el('span', { class: 'chore__emoji', style: { width: '38px', height: '38px', fontSize: '19px' } },
+          inst.chore_emoji),
+        el('span', { class: 'row__body' },
+          el('span', { class: 'row__title', style: { display: 'block' } }, inst.chore_name),
+          el('span', { class: 'row__meta', style: { display: 'block' } },
+            `${child?.name ?? '—'} · ${timeAgo(inst.reviewed_at)}`),
+        ),
+        el('span', { class: 'chore__value' }, formatMoney(inst.value_cents, currency())),
+        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => undoApproval(inst) }, 'Undo'),
+      ),
+    );
+  }
+
+  return foldedSection('Approved this week', `${done.length}`,
+    el('p', { class: 'hint', style: { margin: '10px 2px' } },
+      'Undo puts a chore back on the kid\'s list as not done and takes the money back. '
+      + 'Use it for a mis-tap; use "Needs redo" in the queue when the work itself was the problem.'),
+    rows,
+  );
+}
+
 function renderQueue() {
   const queue = pendingQueue();
   const wrap = el('div');
 
   if (!queue.length) {
     wrap.append(emptyState('☕', 'Nothing to check', 'You are all caught up. Marked-done chores will show up here.'));
+    const approved = approvedSection();
+    if (approved) wrap.append(approved);
     return wrap;
   }
 
@@ -133,6 +198,9 @@ function renderQueue() {
       el('div', { class: 'stack' }, ...items.map(reviewCard)),
     ));
   }
+
+  const approved = approvedSection();
+  if (approved) wrap.append(approved);
 
   return wrap;
 }
