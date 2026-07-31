@@ -57,12 +57,13 @@ end $$;
 --   3  start_fresh() and the history_start_date setting
 --   4  household_today(): dates judged in the family's timezone, not UTC
 --   5  unapprove_chore() for undoing an accidental approval
+--   6  history_start_date clamped to today, so it can never hide today's chores
 -- ---------------------------------------------------------------------
 create or replace function schema_version()
 returns int
 language sql
 immutable
-as $$ select 5; $$;
+as $$ select 6; $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
@@ -536,7 +537,20 @@ begin
   -- Anything before the fresh-start date is deliberately not regenerated.
   -- Without this, start_fresh() would delete a trial run's leftovers and the
   -- next page load would put them straight back.
+  --
+  -- Clamped to today, and this is not a nicety. The marker means "ignore what
+  -- happened before we started for real", so it has no business suppressing
+  -- today or the future. A value that landed a day ahead -- which is what a
+  -- UTC server produces on an American evening -- silently deleted every chore
+  -- due today and regenerated none of them. Clamping makes that unreachable
+  -- however the date got there.
+  -- Note the null check: least() ignores nulls, so least(null, today) is
+  -- today, which would skip the whole week for a household that never set a
+  -- marker at all.
   v_hist := nullif(get_settings()->>'history_start_date', '')::date;
+  if v_hist is not null then
+    v_hist := least(v_hist, household_today());
+  end if;
 
   for a in
     select asg.*,
@@ -1136,6 +1150,13 @@ declare
   v_from   date := coalesce(p_from, household_today());
 begin
   perform require_parent(p_token);
+
+  -- A future date would mean "ignore everything up to and including today",
+  -- which deletes chores the kids still have to do. Refuse it rather than
+  -- quietly clearing the day's work.
+  if v_from > household_today() then
+    raise exception 'Cannot start fresh from a future date (%). Pick today or earlier.', v_from;
+  end if;
 
   if p_wipe_money then
     delete from ledger_entries where id is not null;

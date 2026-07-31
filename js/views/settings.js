@@ -334,6 +334,28 @@ export function renderSettings() {
           + 'Anything before that was cleared and will not come back.'
         : 'Setting the app up generates a week of chores nobody was actually asked to do, '
           + 'and those count as missed forever. Clear them the day you start for real.'),
+
+    // Shown so a wrong value is visible rather than mysterious. Chores due
+    // today are safe regardless — generate_week() clamps this to today — but
+    // being able to see and clear it beats wondering.
+    s.history_start_date
+      ? el('div', { class: 'spread', style: { marginBottom: '12px' } },
+          el('span', { class: 'muted' }, `Counting from ${s.history_start_date}`),
+          el('button', {
+            class: 'btn btn--ghost', type: 'button',
+            onclick: async () => {
+              const ok = await confirmDialog({
+                title: 'Count everything again?',
+                message: 'Statistics go back to including every chore still in the database. '
+                  + 'Chores already deleted by a fresh start stay deleted.',
+                confirmLabel: 'Clear the marker',
+              });
+              if (!ok) return;
+              await saveSetting({ history_start_date: null });
+            },
+          }, 'Clear'),
+        )
+      : null,
     el('button', {
       class: 'btn btn--primary', type: 'button',
       onclick: async () => {

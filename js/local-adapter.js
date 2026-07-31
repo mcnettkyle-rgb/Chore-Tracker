@@ -206,7 +206,10 @@ export class LocalAdapter {
           (ci.due_date ?? null) === (dueDate ?? null),
       );
 
-    const hist = settings.history_start_date || null;
+    // Clamped to today, matching generate_week(): the fresh-start marker must
+    // never suppress chores due today or later, however it was set.
+    const rawHist = settings.history_start_date || null;
+    const hist = rawHist && rawHist > ymd() ? ymd() : rawHist;
 
     // Every (assignment, child, day) the template currently calls for, so the
     // sweep below can spot instances that no longer belong. Same idea as
@@ -613,6 +616,9 @@ export class LocalAdapter {
     const db = this.#read();
     this.#requireParent(db, token);
     if (!from) throw new Error('A start date is required.');
+    if (from > ymd()) {
+      throw new Error(`Cannot start fresh from a future date (${from}). Pick today or earlier.`);
+    }
 
     const effective = (ci) => ci.due_date ?? addDays(ci.week_start, 6);
     const before = db.chore_instances.length;

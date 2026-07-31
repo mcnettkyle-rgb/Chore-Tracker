@@ -94,6 +94,36 @@ begin
     (select coalesce(sum(balance_cents), 0) from child_balances()) = 0,
     'every balance is back to zero');
 
+  -- ---- a marker must never hide today's chores ----
+  -- This one is the whole reason for the clamp. A date that landed a day ahead
+  -- (what a UTC server produces on an American evening) deleted every chore due
+  -- today and regenerated none of them.
+  perform update_settings(v_tok, jsonb_build_object(
+    'history_start_date', to_char(v_today + 1, 'YYYY-MM-DD')));
+  perform generate_week(v_today);
+  perform assert(
+    (select count(*) from chore_instances where due_date = v_today) > 0,
+    'a future start date cannot suppress chores due today');
+
+  begin
+    perform start_fresh(v_tok, v_today + 1, false);
+    perform assert(false, 'start_fresh must refuse a future date');
+  exception when others then
+    perform assert(sqlerrm like '%future date%',
+      format('start_fresh refuses a future date ("%s")', sqlerrm));
+  end;
+
+  -- A sensible date still does its job.
+  perform start_fresh(v_tok, v_today, false);
+  perform generate_week(v_today);
+  perform assert(
+    (select count(*) from chore_instances where due_date = v_today) > 0,
+    'today survives a normal fresh start');
+  perform assert(
+    (select count(*) from chore_instances
+      where coalesce(due_date, week_start + 6) < v_today and status = 'pending') = 0,
+    'while everything before it stays cleared');
+
   -- ---- still gated ----
   begin
     perform start_fresh('forged-token', v_today, true);
