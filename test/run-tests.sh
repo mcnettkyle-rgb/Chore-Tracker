@@ -20,6 +20,17 @@ ROOT="$(dirname "$HERE")"
 export BASE_URL="http://localhost:$PORT"
 export SHOT_DIR="${SHOT_DIR:-$ROOT/.test-screenshots}"
 
+# Two runs on one port is a confusing way to fail: the second serves nothing,
+# and when the FIRST finishes its cleanup tears the server out from under the
+# second, which then dies mid-suite on ERR_CONNECTION_REFUSED and looks for all
+# the world like a real regression. Say what actually happened instead.
+# (The database runner refuses the same way.)
+if curl -fsS "$BASE_URL/index.html" >/dev/null 2>&1; then
+  echo "Something is already serving on port $PORT — is another test run going?" >&2
+  echo "Stop it, or re-run with PORT=8799 ./test/run-tests.sh" >&2
+  exit 1
+fi
+
 # Playwright is usually installed globally; make it importable either way.
 if [ -z "${NODE_PATH:-}" ] && [ -d /opt/node22/lib/node_modules ]; then
   export NODE_PATH=/opt/node22/lib/node_modules
@@ -74,6 +85,18 @@ node "$HERE/rename.test.mjs"
 echo
 echo "==> reassigning a chore"
 node "$HERE/reassign.test.mjs"
+
+echo
+echo "==> the parent's week navigation staying on the parent's screen"
+node "$HERE/week-leak.test.mjs"
+
+echo
+echo "==> paging through weeks in the schedule"
+node "$HERE/week-nav.test.mjs"
+
+echo
+echo "==> two chores sharing a name"
+node "$HERE/duplicate-name.test.mjs"
 
 echo
 echo "==> approval flow"

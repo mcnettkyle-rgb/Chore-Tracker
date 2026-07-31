@@ -9,7 +9,7 @@ import {
   el, formatMoney, parseMoney, ymd, addDays, weekStartFor, dayOfWeek,
   formatWeekRange, DAY_INITIAL, DAY_SHORT, uuid,
 } from '../util.js';
-import { section, emptyState, openDialog, confirmDialog, childChip } from '../ui.js';
+import { section, emptyState, openDialog, confirmDialog } from '../ui.js';
 import {
   state, settings, currency, childById, parentAction, toast, goToWeek, thisWeekStart,
 } from '../store.js';
@@ -288,16 +288,11 @@ async function onEditChore(chore) {
 
   try {
     await parentAction(async (token) => {
-      // Creating? We need the new chore's id before saving assignments, so
-      // save the chore, refresh, then match it back by name.
-      let choreId = result.chore.id;
-      await db.upsertChore(token, result.chore);
-
-      if (!choreId) {
-        const snap = await db.snapshot({ weekStart: state.weekStart });
-        choreId = snap.chores.find((c) => c.name === result.chore.name && c.active)?.id;
-        if (!choreId) throw new Error('Could not find the chore after saving.');
-      }
+      // Both adapters return the row's id, which is the only reliable way to
+      // attach the assignments to the chore we just saved. Looking it up by
+      // name instead put them on the wrong chore whenever two shared a name.
+      const choreId = await db.upsertChore(token, result.chore);
+      if (!choreId) throw new Error('Could not find the chore after saving.');
 
       for (const id of result.removedIds) await db.deleteAssignment(token, id);
       for (const a of result.assignments) await db.upsertAssignment(token, { ...a, chore_id: choreId });

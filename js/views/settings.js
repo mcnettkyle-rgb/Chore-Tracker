@@ -399,7 +399,9 @@ export function renderSettings() {
         const ok = await confirmDialog({
           title: result.wipe ? 'Delete all money history?' : 'Clear unfinished chores?',
           message: result.wipe
-            ? `Every balance goes to zero and all earnings before ${result.from} are deleted. There is no undo.`
+            // start_fresh() clears the ledger outright, not just the part
+            // before the date — say so, because this one cannot be undone.
+            ? `Every balance goes to zero and the entire money history is deleted, including anything earned since ${result.from}. There is no undo.`
             : `Chores before ${result.from} that were never done are deleted. Approved chores and balances are kept.`,
           confirmLabel: result.wipe ? 'Delete everything' : 'Clear them',
         });

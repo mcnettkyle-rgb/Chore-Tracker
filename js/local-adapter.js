@@ -519,23 +519,33 @@ export class LocalAdapter {
   // -------------------------------------------------------------------
   // configuration
   // -------------------------------------------------------------------
+  // Each upsert returns the row's id, matching what the SQL functions return.
+  // Callers rely on it to attach child records to something they just created;
+  // when this returned nothing, the schedule editor had to go looking for the
+  // new chore by name, and picked the wrong one whenever two names matched.
   async upsertChild(token, child) {
     const db = this.#read();
     this.#requireParent(db, token);
     const existing = db.children.find((c) => c.id === child.id);
+    let id = existing?.id;
     if (existing) Object.assign(existing, child);
-    else db.children.push({
-      id: uuid(), name: child.name, color: child.color ?? '#6366f1',
-      emoji: child.emoji ?? '⭐', sort_order: child.sort_order ?? db.children.length + 1,
-      active: child.active ?? true,
-    });
+    else {
+      id = uuid();
+      db.children.push({
+        id, name: child.name, color: child.color ?? '#6366f1',
+        emoji: child.emoji ?? '⭐', sort_order: child.sort_order ?? db.children.length + 1,
+        active: child.active ?? true,
+      });
+    }
     this.#commit(db);
+    return id;
   }
 
   async upsertChore(token, chore) {
     const db = this.#read();
     this.#requireParent(db, token);
     const existing = db.chores.find((c) => c.id === chore.id);
+    let id = existing?.id;
     if (existing) {
       Object.assign(existing, chore);
       // Re-price only work that hasn't been acted on, this week or later.
@@ -551,35 +561,42 @@ export class LocalAdapter {
         ci.chore_emoji = existing.emoji;
       }
     } else {
+      id = uuid();
       db.chores.push({
-        id: uuid(), name: chore.name, emoji: chore.emoji ?? '✅',
+        id, name: chore.name, emoji: chore.emoji ?? '✅',
         description: chore.description ?? '', value_cents: chore.value_cents ?? 50,
         auto_approve: chore.auto_approve ?? false, active: chore.active ?? true,
       });
     }
     this.#commit(db);
+    return id;
   }
 
   async upsertAssignment(token, a) {
     const db = this.#read();
     this.#requireParent(db, token);
     const existing = db.assignments.find((x) => x.id === a.id);
+    let id = existing?.id;
     if (existing) Object.assign(existing, a);
-    else db.assignments.push({
-      id: uuid(),
-      chore_id: a.chore_id,
-      child_id: a.child_id ?? null,
-      rotation_group_id: a.rotation_group_id ?? null,
-      schedule_type: a.schedule_type ?? 'weekly_days',
-      days_of_week: a.days_of_week ?? [],
-      oneoff_week: a.oneoff_week ?? null,
-      value_cents_override: a.value_cents_override ?? null,
-      active: a.active ?? true,
-      effective_from: a.effective_from ?? ymd(),
-      effective_to: a.effective_to ?? null,
-    });
+    else {
+      id = uuid();
+      db.assignments.push({
+        id,
+        chore_id: a.chore_id,
+        child_id: a.child_id ?? null,
+        rotation_group_id: a.rotation_group_id ?? null,
+        schedule_type: a.schedule_type ?? 'weekly_days',
+        days_of_week: a.days_of_week ?? [],
+        oneoff_week: a.oneoff_week ?? null,
+        value_cents_override: a.value_cents_override ?? null,
+        active: a.active ?? true,
+        effective_from: a.effective_from ?? ymd(),
+        effective_to: a.effective_to ?? null,
+      });
+    }
     this.#generate(db, ymd());
     this.#commit(db);
+    return id;
   }
 
   async deleteAssignment(token, id) {
@@ -595,12 +612,17 @@ export class LocalAdapter {
     const db = this.#read();
     this.#requireParent(db, token);
     const existing = db.rotation_groups.find((g) => g.id === group.id);
+    let id = existing?.id;
     if (existing) Object.assign(existing, group);
-    else db.rotation_groups.push({
-      id: uuid(), name: group.name, child_ids: group.child_ids ?? [],
-      anchor_week: group.anchor_week ?? weekStartFor(ymd(), db.household.settings.week_start_day ?? 0),
-    });
+    else {
+      id = uuid();
+      db.rotation_groups.push({
+        id, name: group.name, child_ids: group.child_ids ?? [],
+        anchor_week: group.anchor_week ?? weekStartFor(ymd(), db.household.settings.week_start_day ?? 0),
+      });
+    }
     this.#commit(db);
+    return id;
   }
 
   async updateSettings(token, patch) {

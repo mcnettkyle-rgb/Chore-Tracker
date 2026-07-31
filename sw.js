@@ -30,8 +30,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first for the shell so a deploy is picked up on the next load;
-// the cache is only a fallback for being genuinely offline.
+// Network-first, so a deploy is picked up on the next load and the cache is
+// only ever a fallback for being genuinely offline.
+//
+// Every same-origin GET is cached, not just the SHELL list above: index.html
+// on its own is useless without js/*.js, so a "shell-only" cache would leave
+// an offline tablet showing a blank page. Chore data is not at risk from this
+// — it all comes from Supabase, which is cross-origin and returns above.
+//
+// (This is also what the code already did. The old SHELL.some() guard tested
+// `pathname.endsWith('')` for the './' entry, which is true of every path, so
+// the filter never excluded anything.)
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== location.origin) return;
@@ -39,7 +48,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (response.ok && SHELL.some((path) => url.pathname.endsWith(path.replace('./', '')))) {
+        if (response.ok) {
           const copy = response.clone();
           caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, copy));
         }

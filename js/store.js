@@ -81,14 +81,51 @@ export async function refresh() {
   return snap;
 }
 
-/** Jump to a different week (parent schedule view / kid history). */
+/**
+ * Jump to a different week. Only the parent's Schedule tab does this.
+ *
+ * Generating happens on demand, because generate_week() only ever ran for the
+ * current week: paging forward changed which week was fetched but left it
+ * unmaterialised, so the "Planned" grid — the one screen whose whole job is
+ * answering "what does next week look like?" — came back as a wall of dashes.
+ *
+ * Never backwards. Materialising a past week invents chores nobody was asked
+ * to do, and each one scores as a miss the moment it lands, so idly paging
+ * back through history would quietly wreck the completion rate.
+ */
 export async function goToWeek(weekStart) {
   state.weekStart = weekStart;
+  if (weekStart >= thisWeekStart()) {
+    try { await db.generateWeek(weekStart); } catch { /* show what's there */ }
+  }
   await refresh();
 }
 
 export function thisWeekStart() {
   return weekStartFor(ymd(), settings().week_start_day ?? 0);
+}
+
+/**
+ * Put the snapshot back on the current week.
+ *
+ * `weekStart` has to live in the store, because the snapshot is fetched one
+ * week at a time — but it belongs to the parent's Schedule tab alone. Every
+ * other screen is about *now*: the kid's list, the picker tiles, the ledger's
+ * "earned this week", the queue's "Approved this week".
+ *
+ * Nothing used to reset it, so paging forward a week and then locking left a
+ * kid looking at a week that had not been generated yet. Their list came back
+ * empty and both the tile and their own header cheerfully said "All done 🎉"
+ * over a full day of unfinished chores.
+ *
+ * Also covers a tablet left open past midnight into a new week, which would
+ * otherwise keep showing the week it was opened in.
+ */
+async function returnToCurrentWeek() {
+  const current = thisWeekStart();
+  if (state.weekStart === current) return;
+  state.weekStart = current;
+  await refresh();
 }
 
 // ---------------------------------------------------------------------
@@ -194,29 +231,49 @@ export function isExpired(inst) {
 // Navigation
 // ---------------------------------------------------------------------
 
-export function chooseChild(childId) {
+// Every route change returns to the current week — see returnToCurrentWeek().
+
+export async function chooseChild(childId) {
   localStorage.setItem(PROFILE_KEY, childId);
+  await returnToCurrentWeek();
   setState({ route: 'kid', childId, error: null });
 }
 
-export function goToPicker() {
+export async function goToPicker() {
   localStorage.removeItem(PROFILE_KEY);
+  await returnToCurrentWeek();
   setState({ route: 'picker', childId: null, error: null });
 }
 
-export function enterParent(token) {
+export async function enterParent(token) {
   state.parentToken = token;
   sessionStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(PROFILE_KEY, 'parent');
+  await returnToCurrentWeek();
   setState({ route: 'parent', parentTab: 'queue', error: null });
+}
+
+/**
+ * Switch parent tabs, back on the current week.
+ *
+ * The week selector is part of the Schedule tab. Leaving it there while the
+ * Money tab totals "earned this week" and the queue lists "Approved this week"
+ * would let those two headings describe whatever week you last paged to.
+ */
+export async function setParentTab(parentTab) {
+  await returnToCurrentWeek();
+  setState({ parentTab });
 }
 
 export async function exitParent() {
   const token = state.parentToken;
   state.parentToken = null;
   sessionStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(PROFILE_KEY);
-  setState({ route: 'picker', error: null });
+  // Goes through goToPicker() rather than setting the route itself, so leaving
+  // the parent screen can't quietly skip anything going to the picker does —
+  // which is how the week the parent had paged to used to survive the trip and
+  // leave the kids' tiles describing it.
+  await goToPicker();
   if (token) {
     try { await db.parentLock(token); } catch { /* best effort */ }
   }

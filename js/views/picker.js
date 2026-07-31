@@ -17,7 +17,7 @@ async function onParentTap() {
   });
   if (!result) return;
 
-  enterParent(result.token);
+  await enterParent(result.token);
 
   // First run: make them pick a PIN immediately, or the door stays open.
   if (result.needsPinSetup) {

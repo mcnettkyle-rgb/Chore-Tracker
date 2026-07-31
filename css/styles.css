@@ -164,7 +164,6 @@ button { font: inherit; color: inherit; }
 .btn--ghost  { background: transparent; border-color: transparent; color: var(--ink-soft); }
 .btn--ghost:hover { background: var(--bg-sunken); box-shadow: none; }
 .btn--big    { min-height: var(--tap); padding: 14px 26px; font-size: 17px; }
-.btn--block  { width: 100%; }
 .btn[disabled] { opacity: .45; pointer-events: none; }
 
 /* ---------------------------------------------------------------------
@@ -554,8 +553,6 @@ button { font: inherit; color: inherit; }
   border-radius: 50%;
   font-size: 15px;
 }
-
-.review__when { font-size: 13px; color: var(--ink-faint); margin-left: auto; }
 
 .review__actions { display: flex; gap: 10px; }
 .review__actions .btn { flex: 1; }
@@ -996,19 +993,8 @@ dialog::backdrop { background: rgba(20, 17, 14, .45); backdrop-filter: blur(2px)
 .stack { display: grid; gap: 12px; }
 .spread { display: flex; align-items: center; gap: 12px; }
 .spread__grow { flex: 1; min-width: 0; }
-.right { margin-left: auto; }
 .muted { color: var(--ink-soft); }
-.nowrap { white-space: nowrap; }
 
-.sr-only {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 @media (max-width: 560px) {
   .app { padding-left: 12px; padding-right: 12px; }

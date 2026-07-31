@@ -273,7 +273,8 @@ so you can add them back.
 ## Tests
 
 **Database** — spins up a throwaway local Postgres, applies the real schema, and
-runs 188 assertions. Never touches your Supabase project. Needs `postgresql-16`.
+runs 211 assertions across both project configurations. Never touches your
+Supabase project. Needs `postgresql-16`.
 
 ```bash
 ./supabase/test/run-tests.sh
@@ -287,7 +288,7 @@ cluster grants `anon` the same privileges Supabase does, so those last checks
 exercise row-level security rather than a missing `GRANT`.
 
 **Browser** — drives the real UI in Chromium, against a demo-mode copy so it
-never touches your data. 163 assertions. Needs Playwright.
+never touches your data. 184 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh
@@ -295,8 +296,11 @@ never touches your data. 163 assertions. Needs Playwright.
 
 It walks the whole loop — mark done, undo, reject with a note, redo, approve,
 pay out — plus the parent editors, re-pricing, renaming children, expired
-chores, the dashboard across timeframes, and the PIN lockout. Screenshots land
-in `.test-screenshots/`.
+chores, the dashboard across timeframes, and the PIN lockout. It also pins down
+that the parent's week navigation stays on the parent's screen, that paging
+forward actually shows next week's plan while paging back invents nothing, and
+that two chores sharing a name stay separate. Screenshots land in
+`.test-screenshots/`.
 
 ---
 

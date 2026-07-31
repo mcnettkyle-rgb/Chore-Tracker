@@ -6,7 +6,7 @@
 import { el, formatMoney, timeAgo, contrastOn } from '../util.js';
 import { section, foldedSection, emptyState, childChip, promptDialog, confirmDialog } from '../ui.js';
 import {
-  state, setState, currency, childById, exitParent, pendingQueue,
+  state, setParentTab, currency, childById, exitParent, pendingQueue,
   parentAction, toast, schemaOutOfDate, EXPECTED_SCHEMA_VERSION,
 } from '../store.js';
 import { db } from '../data.js';
@@ -231,7 +231,7 @@ export function renderParent() {
       type: 'button',
       role: 'tab',
       'aria-selected': String(selected),
-      onclick: () => setState({ parentTab: tab.id }),
+      onclick: () => setParentTab(tab.id),
     }, tab.label);
 
     if (tab.id === 'queue' && waiting > 0) {
@@ -262,7 +262,7 @@ export function renderParent() {
         el('span', { class: 'banner__spacer' }),
         el('button', {
           class: 'btn', type: 'button',
-          onclick: () => setState({ parentTab: 'settings' }),
+          onclick: () => setParentTab('settings'),
         }, 'Set a PIN'),
       ),
     );

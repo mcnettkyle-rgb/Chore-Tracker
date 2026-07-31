@@ -105,8 +105,14 @@ function monthEnd(dateStr) {
 }
 
 /**
- * The timeframe options on the dashboard. `all` has no bounds, which is what
- * makes lifetime totals and period totals agree.
+ * The timeframe options on the dashboard.
+ *
+ * `all` is unbounded at the top and, once a fresh start has been declared,
+ * starts at that date. So its "earned" figure can legitimately come in under
+ * the card's "Lifetime earned", which is read straight from the ledger: a
+ * start_fresh() that kept its money leaves earnings behind the line. That is
+ * the intended reading of the two labels — "all time" means all the time you
+ * have chosen to count, "lifetime" means every cent ever recorded.
  */
 export function ranges(weekStartDay = 0, today = ymd(), historyStart = null) {
   const thisWeek = weekStartFor(today, weekStartDay);
