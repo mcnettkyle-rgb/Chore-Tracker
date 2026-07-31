@@ -201,6 +201,18 @@ part; how fast you review shouldn't move their score.
 An "anytime this week" chore has no due date, so it counts on the last day of
 its week — that's the point at which it was genuinely owed.
 
+### Dates are judged where the family lives
+
+Supabase runs in UTC. A household in the Americas is several hours behind, so
+from early evening until midnight local, UTC has already rolled over to
+tomorrow — and a chore due today gets judged against tomorrow's date. A kid
+doing chores after dinner was told "This chore is past its due date."
+
+`household_today()` resolves the date in the timezone stored in settings, and
+every date-sensitive function uses it instead of `current_date`. The timezone
+is shown in **Settings → Rules** with a one-tap button to set it from the
+device you're on; if it doesn't match, the app says so and explains what breaks.
+
 ### Drawing a line under a trial run
 
 Setting the app up generates a week of chores nobody was actually asked to do,
@@ -250,7 +262,7 @@ so you can add them back.
 ## Tests
 
 **Database** — spins up a throwaway local Postgres, applies the real schema, and
-runs 140 assertions. Never touches your Supabase project. Needs `postgresql-16`.
+runs 178 assertions. Never touches your Supabase project. Needs `postgresql-16`.
 
 ```bash
 ./supabase/test/run-tests.sh
@@ -264,7 +276,7 @@ cluster grants `anon` the same privileges Supabase does, so those last checks
 exercise row-level security rather than a missing `GRANT`.
 
 **Browser** — drives the real UI in Chromium, against a demo-mode copy so it
-never touches your data. 129 assertions. Needs Playwright.
+never touches your data. 149 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh

@@ -10,9 +10,6 @@ import { pushSupported, pushEnabled, enablePush, disablePush } from '../push.js'
 const COLORS = ['#e11d48', '#7c3aed', '#0891b2', '#059669', '#d97706', '#db2777', '#4f46e5', '#65a30d'];
 const AVATARS = ['🦊', '🐨', '🐼', '🦁', '🐧', '🦄', '🐢', '🐝', '🦉', '🐙', '⭐', '🌈'];
 
-// One-shot guard: the timezone auto-detect must not re-fire on every render.
-let timezoneSynced = false;
-
 async function saveSetting(patch) {
   try {
     await parentAction((token) => db.updateSettings(token, patch));
@@ -165,7 +162,33 @@ export function renderSettings() {
     saveSetting({ allow_late_submission: allowLate.checked });
   });
 
+  // The server judges "is this chore late?" in this timezone. Getting it wrong
+  // means chores due today are refused after UTC midnight — worth showing
+  // plainly rather than leaving buried in a hint.
+  const detectedZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const storedZone = s.timezone || 'UTC';
+  const zoneMatches = storedZone === detectedZone;
+
+  const zoneRow = el('div', { class: 'field' },
+    el('label', { class: 'field__label' }, 'Timezone'),
+    el('div', { class: 'spread' },
+      el('span', { style: { fontWeight: '650' } }, storedZone),
+      zoneMatches
+        ? el('span', { class: 'pill pill--done' }, '✓ matches this device')
+        : el('button', {
+            class: 'btn btn--primary', type: 'button',
+            onclick: () => saveSetting({ timezone: detectedZone }),
+          }, `Use ${detectedZone}`),
+    ),
+    el('div', { class: 'field__hint' },
+      zoneMatches
+        ? 'Used to decide what counts as "today" when a chore is marked done, and for quiet hours.'
+        : `This device says ${detectedZone}. Until they match, chores due today can be refused `
+          + 'as late once it turns midnight UTC — early evening in the Americas.'),
+  );
+
   wrap.append(section('Rules', null,
+    zoneRow,
     el('div', { class: 'field-row' },
       el('div', { class: 'field field--narrow' },
         el('label', { class: 'field__label' }, 'Week starts on'), weekStart,
@@ -209,15 +232,6 @@ export function renderSettings() {
     const pushOn = el('input', { type: 'checkbox' });
     pushOn.checked = s.notify_push !== false;
     pushOn.addEventListener('change', () => saveSetting({ notify_push: pushOn.checked }));
-
-    // Quiet hours are evaluated server-side in the household's timezone, so
-    // it has to be stored. Detect it once, from the parent's own browser.
-    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (detected && (!s.timezone || s.timezone === 'UTC') && detected !== 'UTC' && !timezoneSynced) {
-      timezoneSynced = true;
-      parentAction((token) => db.updateSettings(token, { timezone: detected }))
-        .catch(() => { timezoneSynced = false; });
-    }
 
     const hourSelect = (value, onChange) => {
       const sel = el('select', { style: { maxWidth: '120px' } });

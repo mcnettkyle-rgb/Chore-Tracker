@@ -383,6 +383,9 @@ export class LocalAdapter {
     const settings = db.household.settings;
     if (inst.due_date && settings.allow_late_submission === false) {
       const grace = settings.late_grace_days ?? 0;
+      // ymd() is already the device's local date, which is the household's —
+      // the equivalent of household_today() in schema.sql, where the server
+      // would otherwise be judging this in UTC.
       if (daysBetween(inst.due_date, ymd()) > grace) throw new Error('This chore is past its due date.');
     }
 

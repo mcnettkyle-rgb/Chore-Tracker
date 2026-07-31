@@ -118,6 +118,10 @@ for MODE in permissive strict; do
 
   # Last: it deletes history the tests above rely on.
   echo
+  echo "==> timezone"
+  show "$HERE/timezone.test.sql"
+
+  echo
   echo "==> fresh start"
   show "$HERE/fresh-start.test.sql"
 done

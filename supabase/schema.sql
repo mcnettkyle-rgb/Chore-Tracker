@@ -55,12 +55,13 @@ end $$;
 --   1  initial schema
 --   2  lifetime_totals() for the parent dashboard
 --   3  start_fresh() and the history_start_date setting
+--   4  household_today(): dates judged in the family's timezone, not UTC
 -- ---------------------------------------------------------------------
 create or replace function schema_version()
 returns int
 language sql
 immutable
-as $$ select 3; $$;
+as $$ select 4; $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
@@ -329,6 +330,26 @@ as $$
   select coalesce((select settings from household limit 1), '{}'::jsonb);
 $$;
 
+-- What day it is *for this family*.
+--
+-- The database runs in UTC. A household in the Americas is several hours
+-- behind, so from early evening until midnight local, UTC has already rolled
+-- over to tomorrow. Using current_date meant chores due today were judged
+-- against tomorrow's date, and a kid doing their chores after dinner was told
+-- "This chore is past its due date."
+--
+-- The timezone is captured from the parent's browser the first time Settings
+-- is opened, and falls back to UTC.
+create or replace function household_today()
+returns date
+language sql
+stable
+security definer
+set search_path = public, extensions
+as $$
+  select (now() at time zone coalesce(nullif(get_settings()->>'timezone', ''), 'UTC'))::date;
+$$;
+
 -- Raises unless the caller holds a live parent session. Sliding expiry:
 -- an active parent stays unlocked.
 create or replace function require_parent(p_token text)
@@ -485,7 +506,7 @@ as $$ select p_assignment::text || '|' || p_child::text || '|' || coalesce(p_due
 -- Materialises chore_instances for a week from the active template.
 -- Idempotent: safe to call on every page load, so there is no cron job and
 -- no way to "miss" a week.
-create or replace function generate_week(p_any_date date default current_date)
+create or replace function generate_week(p_any_date date default null)
 returns jsonb
 language plpgsql
 security definer
@@ -508,7 +529,7 @@ declare
   -- generation runs, then used to sweep away anything that no longer belongs.
   v_want     text[] := '{}';
 begin
-  v_ws     := week_start_for(p_any_date);
+  v_ws     := week_start_for(coalesce(p_any_date, household_today()));
   v_ws_dow := extract(dow from v_ws)::int;
 
   -- Anything before the fresh-start date is deliberately not regenerated.
@@ -650,7 +671,7 @@ begin
   if v_inst.due_date is not null
      and not coalesce((v_settings->>'allow_late_submission')::boolean, true) then
     v_grace := coalesce((v_settings->>'late_grace_days')::int, 0);
-    if current_date > v_inst.due_date + v_grace then
+    if household_today() > v_inst.due_date + v_grace then
       raise exception 'This chore is past its due date.';
     end if;
   end if;
@@ -912,7 +933,7 @@ begin
      where ci.assignment_id = asg.id
        and ci.chore_id = v_id
        and ci.status in ('pending', 'rejected')
-       and ci.week_start >= week_start_for(current_date)
+       and ci.week_start >= week_start_for(household_today())
        and asg.value_cents_override is null;
   end if;
 
@@ -949,7 +970,7 @@ begin
             nullif(p_assignment->>'oneoff_week', '')::date,
             nullif(p_assignment->>'value_cents_override', '')::int,
             coalesce((p_assignment->>'active')::boolean, true),
-            coalesce(nullif(p_assignment->>'effective_from', '')::date, current_date),
+            coalesce(nullif(p_assignment->>'effective_from', '')::date, household_today()),
             nullif(p_assignment->>'effective_to', '')::date)
     returning id into v_id;
   else
@@ -972,7 +993,7 @@ begin
      where id = v_id;
   end if;
 
-  perform generate_week(current_date);
+  perform generate_week(household_today());
   return v_id;
 end;
 $$;
@@ -987,7 +1008,7 @@ begin
   perform require_parent(p_token);
   -- Soft delete: history in chore_instances keeps its snapshotted values.
   update assignments set active = false where id = p_assignment_id;
-  perform generate_week(current_date);
+  perform generate_week(household_today());
 end;
 $$;
 
@@ -1011,7 +1032,7 @@ begin
   if v_id is null then
     insert into rotation_groups (name, child_ids, anchor_week)
     values (p_group->>'name', v_ids,
-            coalesce(nullif(p_group->>'anchor_week', '')::date, week_start_for(current_date)))
+            coalesce(nullif(p_group->>'anchor_week', '')::date, week_start_for(household_today())))
     returning id into v_id;
   else
     update rotation_groups
@@ -1055,7 +1076,7 @@ $$;
 -- ---------------------------------------------------------------------
 create or replace function start_fresh(
   p_token      text,
-  p_from       date default current_date,
+  p_from       date default null,
   p_wipe_money boolean default false
 )
 returns jsonb
@@ -1066,12 +1087,10 @@ as $$
 declare
   v_chores int := 0;
   v_ledger int := 0;
+  -- Defaults to today in the household's timezone, not the server's.
+  v_from   date := coalesce(p_from, household_today());
 begin
   perform require_parent(p_token);
-
-  if p_from is null then
-    raise exception 'A start date is required.';
-  end if;
 
   if p_wipe_money then
     delete from ledger_entries where id is not null;
@@ -1079,24 +1098,24 @@ begin
 
     -- Everything before the line goes, approved or not.
     delete from chore_instances
-     where coalesce(due_date, week_start + 6) < p_from;
+     where coalesce(due_date, week_start + 6) < v_from;
     get diagnostics v_chores = row_count;
   else
     -- Only work nobody ever acted on. Approved chores and the money they
     -- earned survive, because that history is real.
     delete from chore_instances
-     where coalesce(due_date, week_start + 6) < p_from
+     where coalesce(due_date, week_start + 6) < v_from
        and status in ('pending', 'rejected');
     get diagnostics v_chores = row_count;
   end if;
 
   update household
-     set settings = settings || jsonb_build_object('history_start_date', to_char(p_from, 'YYYY-MM-DD'))
+     set settings = settings || jsonb_build_object('history_start_date', to_char(v_from, 'YYYY-MM-DD'))
    where singleton;
 
   return jsonb_build_object(
     'ok', true,
-    'from', p_from,
+    'from', v_from,
     'chores_removed', v_chores,
     'ledger_removed', v_ledger
   );
@@ -1196,6 +1215,7 @@ $$;
 grant execute on function
   schema_version(),
   want_key(uuid, uuid, date),
+  household_today(),
   week_start_for(date),
   get_settings(),
   parent_status(),
