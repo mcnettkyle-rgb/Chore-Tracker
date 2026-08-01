@@ -4,7 +4,9 @@
 // spinner — if a kid marks something done and the parent's tablet shows
 // yesterday's cache, the whole thing stops being trustworthy.
 
-const SHELL_CACHE = 'chore-tracker-shell-v1';
+// Bumping this name is what retires the previous cache: the activate handler
+// below deletes every cache that isn't the current one.
+const SHELL_CACHE = 'chore-tracker-shell-v2';
 const SHELL = [
   './',
   './index.html',
@@ -41,12 +43,35 @@ self.addEventListener('activate', (event) => {
 // (This is also what the code already did. The old SHELL.some() guard tested
 // `pathname.endsWith('')` for the './' entry, which is true of every path, so
 // the filter never excluded anything.)
+/**
+ * The same request, but forced to check with the server.
+ *
+ * "Network-first" is not enough on its own: fetch() inside a service worker
+ * still consults the browser's HTTP cache, and GitHub Pages serves assets with
+ * max-age=600. So for ten minutes after a deploy this worker would dutifully
+ * go to "the network", be handed the browser's stale copy, and cache that —
+ * leaving a tablet showing the old app long after the new one shipped. That is
+ * exactly how a deploy appears not to have worked.
+ *
+ * `no-cache` still allows a conditional request, so an unchanged file costs a
+ * 304 rather than a re-download.
+ */
+function revalidating(request) {
+  try {
+    return new Request(request, { cache: 'no-cache' });
+  } catch {
+    // A navigation request can't be reconstructed (its mode is 'navigate').
+    // Browsers already revalidate those, so the original is fine.
+    return request;
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== location.origin) return;
 
   event.respondWith(
-    fetch(event.request)
+    fetch(revalidating(event.request))
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();

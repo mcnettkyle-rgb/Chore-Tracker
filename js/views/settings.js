@@ -3,6 +3,7 @@
 import { el, contrastOn, parseMoney, ymd, DAY_NAMES } from '../util.js';
 import { section, openDialog, confirmDialog, emptyState } from '../ui.js';
 import { state, settings, currency, parentAction, refresh, toast, exitParent } from '../store.js';
+import { APP_VERSION } from '../version.js';
 import { db, isDemo, CONFIG } from '../data.js';
 import { openSetPin } from './pin.js';
 import { pushSupported, pushEnabled, enablePush, disablePush } from '../push.js';
@@ -516,9 +517,14 @@ export function renderSettings() {
     ));
   }
 
+  // The build marker earns its place: a browser serving a cached copy looks
+  // exactly like a deploy that never happened, and this is the difference.
   wrap.append(
     el('p', { class: 'hint', style: { textAlign: 'center', marginTop: '30px' } },
-      isDemo ? 'Running in demo mode (localStorage)' : `Connected to ${new URL(CONFIG.supabaseUrl).host}`),
+      `App v${APP_VERSION}`,
+      state.schemaVersion ? ` · database v${state.schemaVersion}` : '',
+      ' · ',
+      isDemo ? 'demo mode (localStorage)' : `connected to ${new URL(CONFIG.supabaseUrl).host}`),
   );
 
   return wrap;

@@ -17,3 +17,19 @@
 //   6  history_start_date clamped to today, so it can never hide today's chores
 //   7  'excused' chores (sleepovers, sick days) and savings goals per child
 export const EXPECTED_SCHEMA_VERSION = 7;
+
+/**
+ * Which build of the app this is. Shown at the bottom of Settings.
+ *
+ * There is no build step to stamp this automatically, so it is bumped by hand
+ * with anything worth deploying. It exists because "is my update live yet?"
+ * was otherwise only answerable by hunting for a feature and hoping — and a
+ * browser serving a cached copy looks identical to a deploy that never
+ * happened. A version you can read settles it in two seconds.
+ *
+ *   1.0.0  first release
+ *   1.1.0  the parent's week navigation stops leaking onto the kids' screens
+ *   1.2.0  days off, savings goals, streaks, backups
+ *   1.2.1  service worker revalidates, so a deploy shows up immediately
+ */
+export const APP_VERSION = '1.2.1';
