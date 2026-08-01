@@ -45,13 +45,14 @@ async function onParentTap() {
 /**
  * "🔥 5 day streak" under a child's name.
  *
- * Hidden below two days, for the same reason it is on the kid's own screen: a
- * badge reading "1 day streak" is not an achievement, and "0" reads as a
- * telling-off on the first screen anyone sees in the morning.
+ * Shown from the very first day. Only a streak of zero is hidden — "0 day
+ * streak" on the first screen anyone sees in the morning reads as a
+ * telling-off, and there is nothing yet to celebrate. Day one is where a
+ * streak is most fragile and most worth noticing, so it counts.
  */
 function streakChip(childId) {
   const streak = streakOf(childId);
-  if (!streak || streak.current < 2) return null;
+  if (!streak || streak.current < 1) return null;
   return el('span', { class: 'profile__streak' },
     '🔥 ',
     el('strong', {}, String(streak.current)),

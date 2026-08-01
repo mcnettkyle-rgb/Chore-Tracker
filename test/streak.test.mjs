@@ -82,16 +82,23 @@ await page.waitForSelector('.picker');
 
 const name = (await page.locator('.profile__name').allTextContents())[0].trim();
 
-// ---- nothing finished yet: no badge ----
+// ---- nothing finished yet: nothing shown ----
+// A streak of zero is the one case that stays hidden: there is nothing to
+// celebrate, and "0 day streak" on the first screen of the morning reads as a
+// telling-off.
 const none = await streak(name);
 check(none.present === 0, 'no badge before anything has been finished');
 check(none.chip === null, 'and no chip on the picker either');
 
-// ---- one day done is not a streak worth shouting about ----
+// ---- day one counts ----
+// A streak is most fragile, and most worth noticing, on its first day.
 await setHistory([daysAgo(1)], 'approved');
 const one = await streak(name);
-check(one.present === 0, 'a single finished day still shows no badge');
-check(one.chip === null, 'nor a picker chip — "1 day streak" is not an achievement');
+check(one.chip !== null, 'a single finished day earns a picker chip');
+check(count(one.chip) === 1, `it reads as one day ("${one.chip}")`);
+check(one.present === 1, 'and the kid sees a badge on their own screen');
+check(!/1 days/.test(one.text ?? ''),
+  `the badge is not mis-pluralised ("${one.text}")`);
 
 // ---- three days in a row ----
 const three = [daysAgo(1), daysAgo(2), daysAgo(3)];
@@ -130,10 +137,15 @@ check(/5 days in a row/.test(acrossAway.text ?? ''),
 check(count(acrossAway.chip) === 5, `the picker chip follows along ("${acrossAway.chip}")`);
 
 // ---- a genuine miss does break it ----
+//
+// Checked against the picker chip rather than the badge, because the chip
+// always carries the number while the badge switches to words on day one.
 await setHistory([daysAgo(2)], 'pending');
 const broken = await streak(name);
-check(/1 day|^$/.test(broken.text ?? '') || broken.present === 0,
-  `a missed day cuts the streak back ("${broken.text ?? 'no badge'}")`);
+check(count(broken.chip) < 5,
+  `a missed day cuts the streak back from 5 ("${broken.chip}")`);
+check(count(broken.chip) === 1,
+  `back to just the day since the miss ("${broken.chip}")`);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL STREAK TESTS PASSED');
 await browser.close();

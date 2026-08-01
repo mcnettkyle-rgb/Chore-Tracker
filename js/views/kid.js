@@ -16,8 +16,8 @@ import {
 import { db } from '../data.js';
 
 /**
- * "🔥 6 days in a row". Only rendered once there's something to celebrate —
- * a streak of 0 or 1 shown as a badge reads as a scolding.
+ * "🔥 6 days in a row". Shown from day one — only a streak of zero is hidden,
+ * because there is nothing yet to celebrate and "0" reads as a scolding.
  *
  * The data comes from the store's shared cache, which the picker fills too, so
  * the tile and this badge cannot show different numbers.
@@ -26,13 +26,13 @@ function streakBadge(childId) {
   const streak = streakOf(childId);
   if (!streak) return null;
   const { current, best } = streak;
-  if (current < 2) return null;
+  if (current < 1) return null;
 
   const isBest = current >= best;
   return el('div', { class: 'streak' },
     el('span', { class: 'streak__flame' }, '🔥'),
     el('span', {},
-      el('strong', {}, `${current} days in a row`),
+      el('strong', {}, current === 1 ? 'Day one — keep it going!' : `${current} days in a row`),
       el('span', { class: 'streak__sub' },
         isBest ? 'Your best ever!' : `Your best is ${best}`),
     ),

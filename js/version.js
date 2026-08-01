@@ -35,5 +35,6 @@ export const EXPECTED_SCHEMA_VERSION = 9;
  *   1.2.1  service worker revalidates, so a deploy shows up immediately
  *   1.3.0  streaks on the picker; bonus chores
  *   1.4.0  bonus jobs can have no deadline at all
+ *   1.4.1  a streak shows from day one, not from day two
  */
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.4.1';

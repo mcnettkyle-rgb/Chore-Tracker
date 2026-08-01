@@ -315,7 +315,7 @@ transaction that added it, and a fresh install never exercises it — so the
 failure would pass every other test here and appear only on a live project.
 
 **Browser** — drives the real UI in Chromium, against a demo-mode copy so it
-never touches your data. 317 assertions. Needs Playwright.
+never touches your data. 320 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh
