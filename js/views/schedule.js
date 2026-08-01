@@ -37,7 +37,7 @@ export function rotationLabel(group, separator = '&') {
 // ---------------------------------------------------------------------
 
 /** Returns { node, read() } — read() gives back the assignment or null if removed. */
-function assignmentRow(existing, { children, groups, onRemove }) {
+function assignmentRow(existing, { children, groups, onRemove, allowOpen }) {
   const weekStartDay = settings().week_start_day ?? 0;
   const removed = { value: false };
 
@@ -57,7 +57,30 @@ function assignmentRow(existing, { children, groups, onRemove }) {
     el('option', { value: 'anytime' }, 'Anytime this week'),
     el('option', { value: 'oneoff' }, 'Just once, this week'),
   );
+
+  // "No deadline" is offered for bonus jobs only. Every other chore is part of
+  // a weekly routine, and a required chore that never comes due is not a
+  // routine — it's a thing that sits on a list forever being ignored. A bonus
+  // job has nothing to be late for, so leaving it open costs nothing.
+  const openOption = el('option', { value: 'open' }, 'No deadline — until it\'s done');
+
+  const syncOpen = () => {
+    if (allowOpen()) {
+      if (!openOption.isConnected) type.append(openOption);
+      return;
+    }
+    if (openOption.isConnected) {
+      const wasOpen = type.value === 'open';
+      openOption.remove();
+      // Removing the selected option would silently leave the select blank,
+      // so fall back to the nearest equivalent rather than an empty schedule.
+      if (wasOpen) { type.value = 'anytime'; type.dispatchEvent(new Event('change')); }
+    }
+  };
+
   type.value = existing?.schedule_type ?? 'weekly_days';
+  syncOpen();
+  if (existing?.schedule_type === 'open') type.value = 'open';
 
   // Day-of-week toggles, ordered from the household's week start.
   const selectedDays = new Set(existing?.days_of_week ?? [1, 2, 3, 4, 5]);
@@ -111,6 +134,7 @@ function assignmentRow(existing, { children, groups, onRemove }) {
 
   return {
     node,
+    syncOpen,
     read() {
       if (removed.value) return null;
       const [kind, id] = assignee.value.split(':');
@@ -215,10 +239,17 @@ function choreDialog(chore) {
       const rows = [];
 
       const addRow = (existing) => {
-        const row = assignmentRow(existing, { children, groups, onRemove: () => {} });
+        const row = assignmentRow(existing, {
+          children, groups, onRemove: () => {},
+          allowOpen: () => isBonus.checked,
+        });
         rows.push(row);
         list.append(row.node);
       };
+
+      // Ticking or unticking "Bonus job" adds or removes the no-deadline
+      // option on every row, and un-selects it where it was chosen.
+      isBonus.addEventListener('change', () => { for (const r of rows) r.syncOpen(); });
 
       for (const a of existingAssignments) addRow(a);
 
@@ -501,11 +532,14 @@ function miniChore(item) {
   const classes = ['mini'];
   if (item.status === 'excused') classes.push('mini--excused');
   if (item.is_bonus) classes.push('mini--bonus');
-  const note = item.status === 'excused' ? ' — excused' : item.is_bonus ? ' — bonus, optional' : '';
+  const note = item.status === 'excused' ? ' — excused'
+    : item.is_open ? ' — bonus, no deadline'
+    : item.is_bonus ? ' — bonus, optional'
+    : '';
   return el('span', {
     class: classes.join(' '),
     title: `${item.chore_name}${note}`,
-  }, `${mark}${item.is_bonus ? '💎 ' : ''}${item.chore_emoji} ${item.chore_name}`);
+  }, `${mark}${item.is_bonus ? '💎 ' : ''}${item.chore_emoji} ${item.chore_name}${item.is_open ? ' ∞' : ''}`);
 }
 
 function weekGrid() {
@@ -609,8 +643,9 @@ export function renderSchedule() {
         ? snap.rotationGroups.find((g) => g.id === a.rotation_group_id)
         : null;
       const who = group ? rotationLabel(group) : (childById(a.child_id)?.name ?? '—');
-      if (a.schedule_type === 'anytime') return `${who} · anytime`;
+      if (a.schedule_type === 'anytime') return `${who} · anytime this week`;
       if (a.schedule_type === 'oneoff') return `${who} · once`;
+      if (a.schedule_type === 'open') return `${who} · no deadline`;
       const days = (a.days_of_week ?? []).slice().sort();
       const label = days.length === 7 ? 'every day'
         : days.length === 5 && days.every((d) => d >= 1 && d <= 5) ? 'weekdays'

@@ -16,7 +16,9 @@ their own tablets; nothing earns money until a parent approves it.
   never held against anyone.
 - **Bonus jobs** are harder chores worth extra. They pay like anything else
   when done, and cost nothing when they aren't — no missed count, no dent in
-  the completion rate, and they never break a streak.
+  the completion rate, and they never break a streak. They can also be set to
+  have **no deadline at all**, sitting on the list until they're done instead
+  of expiring with the week.
 - **A dashboard** shows completion rate, missed chores and lifetime earnings
   over any week or month — for rewarding a perfect run. Kids see their
   **streak** on the picker and on their own screen, and neither days away nor
@@ -292,7 +294,7 @@ so you can add them back.
 ## Tests
 
 **Database** — spins up a throwaway local Postgres, applies the real schema, and
-runs 269 assertions across both project configurations. Never touches your
+runs 304 assertions across both project configurations. Never touches your
 Supabase project. Needs `postgresql-16`.
 
 ```bash
@@ -313,7 +315,7 @@ transaction that added it, and a fresh install never exercises it — so the
 failure would pass every other test here and appear only on a live project.
 
 **Browser** — drives the real UI in Chromium, against a demo-mode copy so it
-never touches your data. 306 assertions. Needs Playwright.
+never touches your data. 317 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh

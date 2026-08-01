@@ -277,6 +277,33 @@ export class LocalAdapter {
         add(a, chore, childId, null);
       } else if (a.schedule_type === 'oneoff') {
         if (weekStartFor(a.oneoff_week, settings.week_start_day ?? 0) === ws) add(a, chore, childId, null);
+      } else if (a.schedule_type === 'open') {
+        // Exactly one instance, ever -- not one per week. Mirrors the 'open'
+        // branch of generate_week(): the week is meaningless here, so
+        // generating a later week must not mint a second copy. Not added to
+        // `want` either; the sweep below skips open rows outright.
+        const exists = db.chore_instances.some(
+          (ci) => ci.assignment_id === a.id && ci.child_id === childId,
+        );
+        if (!exists) {
+          db.chore_instances.push({
+            id: uuid(),
+            assignment_id: a.id,
+            chore_id: a.chore_id,
+            child_id: childId,
+            week_start: ws,
+            due_date: null,
+            status: 'pending',
+            value_cents: a.value_cents_override ?? chore.value_cents,
+            chore_name: chore.name,
+            chore_emoji: chore.emoji,
+            is_bonus: !!chore.is_bonus,
+            is_open: true,
+            submitted_at: null,
+            reviewed_at: null,
+            review_note: null,
+          });
+        }
       }
     }
 
@@ -286,6 +313,9 @@ export class LocalAdapter {
     // instances it produced are now wrong, so it showed on both kids at once.
     db.chore_instances = db.chore_instances.filter((ci) => {
       if (ci.week_start !== ws || ci.status !== 'pending' || !ci.assignment_id) return true;
+      // An open job's week_start is just where it was created, so from any
+      // other week it looks unwanted -- and losing it would be permanent.
+      if (ci.is_open) return true;
       return want.has(key(ci.assignment_id, ci.child_id, ci.due_date));
     });
 
@@ -327,7 +357,13 @@ export class LocalAdapter {
       chores: [...db.chores].sort((a, b) => a.name.localeCompare(b.name)),
       rotationGroups: db.rotation_groups,
       assignments: db.assignments,
-      instances: db.chore_instances.filter((ci) => ci.week_start === ws),
+      // The week being viewed, PLUS any open-ended job still outstanding.
+      // An open job belongs to no week -- its week_start is only where it was
+      // created -- so scoping it to one week would hide it from every other.
+      instances: db.chore_instances.filter(
+        (ci) => ci.week_start === ws
+          || (ci.is_open && ['pending', 'rejected', 'submitted'].includes(ci.status)),
+      ),
       // Submitted work from ANY week, so nothing can get stranded.
       pendingInstances: db.chore_instances
         .filter((ci) => ci.status === 'submitted')
@@ -737,11 +773,13 @@ export class LocalAdapter {
 
     if (wipeMoney) {
       db.ledger_entries = [];
-      db.chore_instances = db.chore_instances.filter((ci) => effectiveDate(ci) >= from);
+      db.chore_instances = db.chore_instances.filter((ci) => ci.is_open || effectiveDate(ci) >= from);
     } else {
       // Approved and excused work survive; only chores nobody acted on go.
       db.chore_instances = db.chore_instances.filter(
-        (ci) => effectiveDate(ci) >= from || !['pending', 'rejected'].includes(ci.status),
+        (ci) => ci.is_open
+          || effectiveDate(ci) >= from
+          || !['pending', 'rejected'].includes(ci.status),
       );
     }
 

@@ -124,6 +124,10 @@ for MODE in permissive strict; do
   echo "==> bonus chores"
   show "$HERE/bonus.test.sql"
 
+  echo
+  echo "==> open-ended bonus jobs"
+  show "$HERE/open.test.sql"
+
   # Last: it deletes history the tests above rely on.
   echo
   echo "==> timezone"

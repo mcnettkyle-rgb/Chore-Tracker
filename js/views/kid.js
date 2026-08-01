@@ -119,6 +119,10 @@ function choreCard(inst, { onTap = null, tone = '', weekEnd = null } = {}) {
     // muted and never "LATE": it identifies, it doesn't chase.
     if (inst.due_date) {
       right.append(el('span', { class: 'pill pill--muted' }, friendlyDay(inst.due_date)));
+    } else if (inst.is_open) {
+      // Says plainly that this one doesn't expire — otherwise it looks
+      // identical to an "anytime this week" job that vanishes on Sunday.
+      right.append(el('span', { class: 'pill pill--muted' }, '∞ No deadline'));
     }
   } else {
     // Still to do (pending or sent back) — always say when it's due.

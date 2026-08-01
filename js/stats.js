@@ -25,6 +25,14 @@ export function effectiveDate(inst) {
  * day has gone is a miss, whether or not late submission is allowed.
  */
 function isPast(inst, today) {
+  // An open-ended job has no deadline to be past. Its week_start is only where
+  // it was created, so judging it by that would mark a chore as missed for
+  // failing to meet a date it was explicitly given none of.
+  //
+  // Only bonus jobs can be open today, and the bonus branch in summarise()
+  // already returns before reaching this — but the rule belongs with the
+  // definition, not with whoever happens to call it.
+  if (inst.is_open) return false;
   return effectiveDate(inst) < today;
 }
 

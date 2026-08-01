@@ -115,6 +115,10 @@ echo "==> bonus chores"
 node "$HERE/bonus.test.mjs"
 
 echo
+echo "==> open-ended bonus jobs"
+node "$HERE/open-ended.test.mjs"
+
+echo
 echo "==> downloading a backup"
 node "$HERE/export.test.mjs"
 

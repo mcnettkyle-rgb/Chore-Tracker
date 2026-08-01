@@ -60,19 +60,28 @@ end $$;
 --   6  history_start_date clamped to today, so it can never hide today's chores
 --   7  'excused' chores (sleepovers, sick days) and savings goals per child
 --   8  bonus chores: extra money, and outside the stats entirely
+--   9  open-ended bonus jobs, which sit there until done rather than expiring
 -- ---------------------------------------------------------------------
 create or replace function schema_version()
 returns int
 language sql
 immutable
-as $$ select 8; $$;
+as $$ select 9; $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
 -- ---------------------------------------------------------------------
 do $$ begin
-  create type schedule_type as enum ('weekly_days', 'anytime', 'oneoff');
+  create type schedule_type as enum ('weekly_days', 'anytime', 'oneoff', 'open');
 exception when duplicate_object then null; end $$;
+
+-- 'open' means "no deadline at all": one instance that sits on the list until
+-- it is done, rather than being regenerated every week and quietly expiring
+-- with it. Offered only for bonus jobs, where there is no schedule to break.
+--
+-- Same transaction rule as 'excused' below -- every function referencing
+-- 'open' must be plpgsql, and lint.mjs enforces it.
+alter type schedule_type add value if not exists 'open';
 
 do $$ begin
   create type chore_status as enum ('pending', 'submitted', 'approved', 'rejected', 'excused');
@@ -235,6 +244,12 @@ create table if not exists chore_instances (
 -- catalog — so turning an existing chore into a bonus (or back) changes what
 -- happens from now on and silently rewrites no history.
 alter table chore_instances add column if not exists is_bonus boolean not null default false;
+
+-- Set for instances generated from an 'open' assignment. Snapshotted for the
+-- same reason as is_bonus, and because everything else in this app is scoped
+-- to a week: this is the flag that says "ignore the week_start on this row, it
+-- is only where the chore happened to be created".
+alter table chore_instances add column if not exists is_open boolean not null default false;
 
 -- Makes generate_week() idempotent.
 create unique index if not exists chore_instances_dedupe
@@ -678,6 +693,31 @@ begin
          v_value, a.c_name, a.c_emoji, a.c_bonus)
       on conflict do nothing;
       v_created := v_created + (case when found then 1 else 0 end);
+
+    elsif a.schedule_type = 'open' then
+      -- Exactly one instance, ever -- not one per week like everything above.
+      -- The dedupe index can't express that, because it is keyed on week_start
+      -- and the whole point here is that the week is meaningless: generating
+      -- next week would otherwise mint a second copy of the same job.
+      --
+      -- No history-start check either. That clamp exists to stop a trial run's
+      -- old *dated* work reappearing, and this has no date to be old.
+      if not exists (
+        select 1 from chore_instances ci
+         where ci.assignment_id = a.id
+           and ci.child_id = v_child
+      ) then
+        insert into chore_instances
+          (assignment_id, chore_id, child_id, week_start, due_date,
+           value_cents, chore_name, chore_emoji, is_bonus, is_open)
+        values
+          (a.id, a.chore_id, v_child, v_ws, null,
+           v_value, a.c_name, a.c_emoji, a.c_bonus, true);
+        v_created := v_created + 1;
+      end if;
+      -- Deliberately NOT added to v_want: the sweep below skips open rows
+      -- outright, because it only ever looks at one week and this row may have
+      -- been created in a different one.
     end if;
   end loop;
 
@@ -692,10 +732,16 @@ begin
   --
   -- Only 'pending' rows are eligible. Anything submitted, approved or rejected
   -- is history and stays, even if the template has since moved on.
+  -- Open-ended rows are exempt. The sweep reasons about a single week, and an
+  -- open job's week_start is just where it happened to be created -- so from
+  -- any other week it looks like something the template no longer calls for,
+  -- and would be deleted. It can never be regenerated, so that loss is
+  -- permanent. Switching the assignment off is what removes one.
   delete from chore_instances ci
    where ci.week_start = v_ws
      and ci.status = 'pending'
      and ci.assignment_id is not null
+     and not ci.is_open
      and not (want_key(ci.assignment_id, ci.child_id, ci.due_date) = any (v_want));
   get diagnostics v_removed = row_count;
 
@@ -1358,19 +1404,25 @@ begin
     raise exception 'Cannot start fresh from a future date (%). Pick today or earlier.', v_from;
   end if;
 
+  -- Open-ended jobs are excluded from both branches below. "Before the line"
+  -- is a statement about a date, and they have none -- their week_start is
+  -- only where they were created, so judging them by it would delete work
+  -- that is still outstanding and can never be regenerated.
   if p_wipe_money then
     delete from ledger_entries where id is not null;
     get diagnostics v_ledger = row_count;
 
     -- Everything before the line goes, approved or not.
     delete from chore_instances
-     where coalesce(due_date, week_start + 6) < v_from;
+     where coalesce(due_date, week_start + 6) < v_from
+       and not is_open;
     get diagnostics v_chores = row_count;
   else
     -- Only work nobody ever acted on. Approved chores and the money they
     -- earned survive, because that history is real.
     delete from chore_instances
      where coalesce(due_date, week_start + 6) < v_from
+       and not is_open
        and status in ('pending', 'rejected');
     get diagnostics v_chores = row_count;
   end if;

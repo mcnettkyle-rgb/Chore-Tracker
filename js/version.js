@@ -17,7 +17,8 @@
 //   6  history_start_date clamped to today, so it can never hide today's chores
 //   7  'excused' chores (sleepovers, sick days) and savings goals per child
 //   8  bonus chores: extra money, and outside the stats entirely
-export const EXPECTED_SCHEMA_VERSION = 8;
+//   9  open-ended bonus jobs, which sit there until done rather than expiring
+export const EXPECTED_SCHEMA_VERSION = 9;
 
 /**
  * Which build of the app this is. Shown at the bottom of Settings.
@@ -33,5 +34,6 @@ export const EXPECTED_SCHEMA_VERSION = 8;
  *   1.2.0  days off, savings goals, streaks, backups
  *   1.2.1  service worker revalidates, so a deploy shows up immediately
  *   1.3.0  streaks on the picker; bonus chores
+ *   1.4.0  bonus jobs can have no deadline at all
  */
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';

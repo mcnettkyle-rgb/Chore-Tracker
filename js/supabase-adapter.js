@@ -110,17 +110,29 @@ export class SupabaseAdapter {
     const household = householdRows[0] ?? { name: 'Our Household', settings: {}, pin_is_set: false };
     const ws = weekStart ?? weekStartFor(ymd(), household.settings?.week_start_day ?? 0);
 
-    const [children, chores, rotationGroups, assignments, instances, pendingInstances, balanceRows, recentLedger] =
+    const [children, chores, rotationGroups, assignments, weekInstances, openInstances, pendingInstances, balanceRows, recentLedger] =
       await Promise.all([
         this.#select('children', (q) => q.order('sort_order')),
         this.#select('chores', (q) => q.order('name')),
         this.#select('rotation_groups'),
         this.#select('assignments'),
         this.#select('chore_instances', (q) => q.eq('week_start', ws)),
+        // Open-ended jobs belong to no week -- week_start is only where they
+        // were created -- so they are fetched separately and merged below.
+        // Without this they would be visible in exactly one week and invisible
+        // in every other, which for a chore with no deadline is nonsense.
+        this.#select('chore_instances', (q) =>
+          q.eq('is_open', true).in('status', ['pending', 'rejected', 'submitted'])),
         this.#select('chore_instances', (q) => q.eq('status', 'submitted').order('submitted_at')),
         this.#rpc('child_balances'),
         this.#select('ledger_entries', (q) => q.order('created_at', { ascending: false }).limit(100)),
       ]);
+
+    // Keyed by id, because an open job created during the week on screen comes
+    // back from both queries.
+    const instances = [...new Map(
+      [...weekInstances, ...openInstances].map((ci) => [ci.id, ci]),
+    ).values()];
 
     const balances = {};
     for (const c of children) balances[c.id] = 0;
