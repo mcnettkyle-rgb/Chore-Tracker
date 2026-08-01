@@ -74,6 +74,33 @@ for (const file of FILES) {
   const publicOnly = paths.filter((p) => !/extensions/.test(p));
   check(publicOnly.length === 0,
     `${name}: search_path includes "extensions" so pgcrypto resolves on Supabase (${paths.length} checked)`);
+
+  // ---- enum values added by an upgrade may only be used from plpgsql ----
+  //
+  // The Supabase SQL editor runs this file as one transaction, and Postgres
+  // refuses to use an enum value in the same transaction that added it. A
+  // `language sql` body is parsed at CREATE time and trips that immediately;
+  // a `language plpgsql` body is not parsed until it runs, long after commit.
+  //
+  // The trap is that this only fails on an UPGRADE — a fresh install has the
+  // value in the original CREATE TYPE and sails through — so it would sail
+  // past every test here and land on a live database only.
+  const added = [...src.matchAll(/alter\s+type\s+\w+\s+add\s+value\s+(?:if\s+not\s+exists\s+)?'([^']+)'/gi)]
+    .map((m) => m[1]);
+
+  for (const value of added) {
+    // Split into function definitions and check the language of any that
+    // mention the newly-added value.
+    const bodies = [...src.matchAll(/create\s+or\s+replace\s+function\s+(\w+)([\s\S]*?)\$\$([\s\S]*?)\$\$/gi)];
+    const offenders = bodies
+      .filter((m) => new RegExp(`'${value}'`).test(m[3]))
+      .filter((m) => !/language\s+plpgsql/i.test(m[2]))
+      .map((m) => m[1]);
+
+    check(offenders.length === 0,
+      `${name}: functions using the added enum value '${value}' are plpgsql, not sql` +
+        (offenders.length ? `\n         ${offenders.join(', ')} — would fail on an UPGRADE only` : ''));
+  }
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL SQL LINT CHECKS PASSED');

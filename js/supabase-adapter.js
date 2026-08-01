@@ -210,6 +210,18 @@ export class SupabaseAdapter {
   unapproveChore(token, id) {
     return this.#rpc('unapprove_chore', { p_token: token, p_instance_id: id });
   }
+  excuseChore(token, id) {
+    return this.#rpc('excuse_chore', { p_token: token, p_instance_id: id });
+  }
+  unexcuseChore(token, id) {
+    return this.#rpc('unexcuse_chore', { p_token: token, p_instance_id: id });
+  }
+  excuseRange(token, childId, from, to) {
+    return this.#rpc('excuse_range', { p_token: token, p_child_id: childId, p_from: from, p_to: to });
+  }
+  unexcuseRange(token, childId, from, to) {
+    return this.#rpc('unexcuse_range', { p_token: token, p_child_id: childId, p_from: from, p_to: to });
+  }
   rejectChore(token, id, note) {
     return this.#rpc('reject_chore', { p_token: token, p_instance_id: id, p_note: note ?? null });
   }
@@ -252,6 +264,40 @@ export class SupabaseAdapter {
   }
   unregisterPush(endpoint) {
     return this.#rpc('unregister_push', { p_endpoint: endpoint });
+  }
+
+  /**
+   * Everything readable, as plain JSON, for the parent to keep a copy of.
+   *
+   * The PIN hash and session tokens are simply not reachable through the API —
+   * `household_public` exists precisely to project them away — so this export
+   * cannot leak them even by accident, and matches what the demo adapter
+   * produces field for field.
+   */
+  async exportAll() {
+    const [household, children, chores, rotationGroups, assignments, instances, ledger] =
+      await Promise.all([
+        this.#select('household_public'),
+        this.#select('children', (q) => q.order('sort_order')),
+        this.#select('chores', (q) => q.order('name')),
+        this.#select('rotation_groups'),
+        this.#select('assignments'),
+        this.#select('chore_instances', (q) => q.order('week_start')),
+        this.#select('ledger_entries', (q) => q.order('created_at')),
+      ]);
+
+    return {
+      exported_at: new Date().toISOString(),
+      source: 'supabase',
+      schema_version: await this.schemaVersion(),
+      household: household[0] ?? null,
+      children,
+      chores,
+      rotation_groups: rotationGroups,
+      assignments,
+      chore_instances: instances,
+      ledger_entries: ledger,
+    };
   }
 
   async resetDemo() {

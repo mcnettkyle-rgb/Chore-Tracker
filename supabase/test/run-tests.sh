@@ -116,6 +116,10 @@ for MODE in permissive strict; do
   run "$PGDATA/notifications.sql"
   show "$HERE/notifications.test.sql"
 
+  echo
+  echo "==> excusing chores"
+  show "$HERE/excuse.test.sql"
+
   # Last: it deletes history the tests above rely on.
   echo
   echo "==> timezone"
@@ -125,6 +129,52 @@ for MODE in permissive strict; do
   echo "==> fresh start"
   show "$HERE/fresh-start.test.sql"
 done
+
+# ---------------------------------------------------------------------
+# The upgrade path, which is the one that can fail on its own.
+#
+# Everything above installs schema.sql into an empty database. A live project
+# is not empty: its chore_status enum predates 'excused', so applying the new
+# file has to ALTER the type rather than create it -- and the Supabase SQL
+# editor runs the whole file as ONE transaction, where Postgres refuses to use
+# an enum value added in that same transaction.
+#
+# A fresh install never hits that, so without this step the failure would sail
+# through every test above and land only on a real, already-running database.
+# ---------------------------------------------------------------------
+echo
+echo "#####################################################################"
+echo "# upgrading a live database (enum predates 'excused', one transaction)"
+echo "#####################################################################"
+
+DB=chores_upgrade
+psql -h /tmp -p "$PGPORT" -U postgres -qc "create database $DB;"
+run "$HERE/prelude.sql"
+run "$HERE/prelude-net.sql"
+
+# The chore_status a version-6 database has.
+psql -h /tmp -p "$PGPORT" -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 \
+  -c "create type chore_status as enum ('pending','submitted','approved','rejected');"
+
+# -1 wraps the file in a single transaction, exactly like the SQL editor.
+#
+# psql's own exit status is what matters here. Piping it through `grep -v` to
+# hide NOTICEs would report grep's status instead, and grep exits 1 when it
+# filters out every line -- so a completely clean run would read as a failure.
+UPGRADE_LOG="$PGDATA/upgrade.log"
+if psql -h /tmp -p "$PGPORT" -U postgres -d "$DB" -q -1 -v ON_ERROR_STOP=1 \
+     -f "$SUPA/schema.sql" >"$UPGRADE_LOG" 2>&1; then
+  echo "PASS  schema.sql applies to a version-6 database in one transaction"
+else
+  echo "FAIL  schema.sql applies to a version-6 database in one transaction"
+  grep -E 'ERROR|HINT|LINE' "$UPGRADE_LOG" | head -10
+  exit 1
+fi
+
+# And the new value is actually usable once that transaction has committed.
+psql -h /tmp -p "$PGPORT" -U postgres -d "$DB" -q -v ON_ERROR_STOP=1 \
+  -f "$SUPA/seed.sql" >/dev/null
+show "$HERE/upgrade.test.sql"
 
 echo
 echo "==> all tests passed under both project configurations"

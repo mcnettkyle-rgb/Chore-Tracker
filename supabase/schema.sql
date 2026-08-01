@@ -58,12 +58,13 @@ end $$;
 --   4  household_today(): dates judged in the family's timezone, not UTC
 --   5  unapprove_chore() for undoing an accidental approval
 --   6  history_start_date clamped to today, so it can never hide today's chores
+--   7  'excused' chores (sleepovers, sick days) and savings goals per child
 -- ---------------------------------------------------------------------
 create or replace function schema_version()
 returns int
 language sql
 immutable
-as $$ select 6; $$;
+as $$ select 7; $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
@@ -73,8 +74,31 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type chore_status as enum ('pending', 'submitted', 'approved', 'rejected');
+  create type chore_status as enum ('pending', 'submitted', 'approved', 'rejected', 'excused');
 exception when duplicate_object then null; end $$;
+
+-- 'excused' arrived in version 7, so a database created before then needs it
+-- added rather than created. No-op on a fresh install, where it is already in
+-- the CREATE above.
+--
+-- READ THIS BEFORE REFERENCING 'excused' ANYWHERE IN THIS FILE
+-- -----------------------------------------------------------
+-- The Supabase SQL editor runs this whole script as ONE transaction, and
+-- Postgres refuses to *use* a new enum value in the same transaction that
+-- added it:
+--
+--   ERROR: unsafe use of new value "excused" of enum type chore_status
+--   HINT:  New enum values must be committed before they can be used.
+--
+-- A `language sql` function body is parsed when the function is created, so
+-- one mentioning 'excused' fails right here — but only on an upgrade, never on
+-- a fresh install, which is the worst possible way for it to fail. A
+-- `language plpgsql` body is not parsed until it runs, by which time the
+-- transaction has committed, so it is safe.
+--
+-- Every function below that mentions 'excused' is therefore plpgsql, and
+-- supabase/test/lint.mjs fails the build if that ever stops being true.
+alter type chore_status add value if not exists 'excused';
 
 do $$ begin
   create type ledger_type as enum ('earning', 'payout', 'adjustment');
@@ -121,6 +145,13 @@ create table if not exists children (
   active     boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+-- What this child is saving up for. Null goal_cents means "no goal set", which
+-- is the default and hides the progress bar entirely. Added in version 7, so
+-- these are ALTERs rather than part of the CREATE above.
+alter table children add column if not exists goal_cents int
+  check (goal_cents is null or goal_cents > 0);
+alter table children add column if not exists goal_label text;
 
 create table if not exists chores (
   id           uuid primary key default gen_random_uuid(),
@@ -840,6 +871,140 @@ begin
 end;
 $$;
 
+-- =====================================================================
+-- Excusing: "this didn't happen, and that's fine"
+-- =====================================================================
+-- A sleepover, a sick day, a week at grandma's. Without this the only options
+-- were reject_chore() -- which means "you did this badly, do it again" and
+-- shows the kid a note -- or letting the chore score as a miss.
+--
+-- That mattered more than it looks. The completion rate is what the whole
+-- reward mechanic rests on, and a rate that drops for days a child was never
+-- asked about is a rate nobody can trust.
+--
+-- Excused chores are a DECISION, not an omission: they survive generate_week()
+-- and start_fresh() exactly like approved ones do, and they sit outside the
+-- completion rate rather than counting against it.
+--
+-- Reminder: plpgsql, not sql -- see the note by `alter type chore_status`.
+-- =====================================================================
+
+create or replace function excuse_chore(p_token text, p_instance_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+  perform require_parent(p_token);
+
+  -- Only work that hasn't been done. An approved chore was earned, and
+  -- excusing it would mean taking money back without saying so.
+  update chore_instances
+     set status = 'excused', reviewed_at = now(), review_note = null
+   where id = p_instance_id
+     and status in ('pending', 'rejected');
+
+  if not found then
+    return jsonb_build_object('ok', true, 'noop', true);
+  end if;
+  return jsonb_build_object('ok', true, 'status', 'excused');
+end;
+$$;
+
+create or replace function unexcuse_chore(p_token text, p_instance_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+  perform require_parent(p_token);
+
+  update chore_instances
+     set status = 'pending', reviewed_at = null
+   where id = p_instance_id
+     and status = 'excused';
+
+  if not found then
+    return jsonb_build_object('ok', true, 'noop', true);
+  end if;
+  return jsonb_build_object('ok', true, 'status', 'pending');
+end;
+$$;
+
+-- Excuse everything a child owes across a span of days -- the "Ava is away
+-- Friday to Sunday" case, which is the one that actually comes up.
+--
+-- Matches on the date a chore is really answerable for: its due date, or for
+-- an "anytime this week" chore the end of its week. That is the same rule
+-- start_fresh() and the dashboard use, so a chore is judged by one definition
+-- of "when was this owed" everywhere.
+create or replace function excuse_range(
+  p_token    text,
+  p_child_id uuid,
+  p_from     date,
+  p_to       date
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare v_count int := 0;
+begin
+  perform require_parent(p_token);
+
+  if p_from is null or p_to is null then
+    raise exception 'A start and end date are both required.';
+  end if;
+  if p_to < p_from then
+    raise exception 'The end date (%) is before the start date (%).', p_to, p_from;
+  end if;
+
+  update chore_instances
+     set status = 'excused', reviewed_at = now(), review_note = null
+   where child_id = p_child_id
+     and status in ('pending', 'rejected')
+     and coalesce(due_date, week_start + 6) between p_from and p_to;
+  get diagnostics v_count = row_count;
+
+  return jsonb_build_object('ok', true, 'excused', v_count,
+                            'from', p_from, 'to', p_to);
+end;
+$$;
+
+-- Undo the above: put an excused span back on the child's list.
+create or replace function unexcuse_range(
+  p_token    text,
+  p_child_id uuid,
+  p_from     date,
+  p_to       date
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare v_count int := 0;
+begin
+  perform require_parent(p_token);
+
+  if p_from is null or p_to is null then
+    raise exception 'A start and end date are both required.';
+  end if;
+
+  update chore_instances
+     set status = 'pending', reviewed_at = null
+   where child_id = p_child_id
+     and status = 'excused'
+     and coalesce(due_date, week_start + 6) between p_from and p_to;
+  get diagnostics v_count = row_count;
+
+  return jsonb_build_object('ok', true, 'restored', v_count);
+end;
+$$;
+
 create or replace function approve_all(p_token text, p_child_id uuid default null)
 returns jsonb
 language plpgsql
@@ -927,20 +1092,30 @@ begin
   v_id := nullif(p_child->>'id', '')::uuid;
 
   if v_id is null then
-    insert into children (name, color, emoji, sort_order, active)
+    insert into children (name, color, emoji, sort_order, active, goal_cents, goal_label)
     values (p_child->>'name',
             coalesce(p_child->>'color', '#6366f1'),
             coalesce(p_child->>'emoji', '⭐'),
             coalesce((p_child->>'sort_order')::int, 0),
-            coalesce((p_child->>'active')::boolean, true))
+            coalesce((p_child->>'active')::boolean, true),
+            nullif(p_child->>'goal_cents', '')::int,
+            nullif(p_child->>'goal_label', ''))
     returning id into v_id;
   else
+    -- The two goal fields use `? 'key'` rather than coalesce(), because
+    -- clearing a goal means writing NULL — and coalesce() would read that as
+    -- "not supplied" and keep the old value, making the goal impossible to
+    -- remove once set.
     update children
        set name       = coalesce(p_child->>'name', name),
            color      = coalesce(p_child->>'color', color),
            emoji      = coalesce(p_child->>'emoji', emoji),
            sort_order = coalesce((p_child->>'sort_order')::int, sort_order),
-           active     = coalesce((p_child->>'active')::boolean, active)
+           active     = coalesce((p_child->>'active')::boolean, active),
+           goal_cents = case when p_child ? 'goal_cents'
+                             then nullif(p_child->>'goal_cents', '')::int else goal_cents end,
+           goal_label = case when p_child ? 'goal_label'
+                             then nullif(p_child->>'goal_label', '') else goal_label end
      where id = v_id;
   end if;
 
@@ -1293,6 +1468,10 @@ grant execute on function
   unsubmit_chore(uuid),
   approve_chore(text, uuid),
   unapprove_chore(text, uuid),
+  excuse_chore(text, uuid),
+  unexcuse_chore(text, uuid),
+  excuse_range(text, uuid, date, date),
+  unexcuse_range(text, uuid, date, date),
   reject_chore(text, uuid, text),
   approve_all(text, uuid),
   record_payout(text, uuid, int, text),

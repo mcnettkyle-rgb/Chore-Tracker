@@ -15,4 +15,5 @@
 //   4  household_today(): dates judged in the family's timezone, not UTC
 //   5  unapprove_chore() for undoing an accidental approval
 //   6  history_start_date clamped to today, so it can never hide today's chores
-export const EXPECTED_SCHEMA_VERSION = 6;
+//   7  'excused' chores (sleepovers, sick days) and savings goals per child
+export const EXPECTED_SCHEMA_VERSION = 7;

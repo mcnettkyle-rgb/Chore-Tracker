@@ -44,7 +44,7 @@ export function summarise(instances, { from, to, today = ymd() } = {}) {
 
   const byChild = new Map();
   const blank = () => ({
-    approved: 0, missed: 0, waiting: 0, upcoming: 0,
+    approved: 0, missed: 0, waiting: 0, upcoming: 0, excused: 0,
     earnedCents: 0, missedCents: 0, waitingCents: 0,
   });
 
@@ -58,6 +58,12 @@ export function summarise(instances, { from, to, today = ymd() } = {}) {
     } else if (inst.status === 'submitted') {
       s.waiting++;
       s.waitingCents += inst.value_cents;
+    } else if (inst.status === 'excused') {
+      // A sleepover, a sick day, a week at grandma's. Counted separately and
+      // deliberately kept out of `decided` below — this is the entire point of
+      // the status. It is neither a success nor a failure, so it must not push
+      // the rate in either direction.
+      s.excused++;
     } else if (isPast(inst, today)) {
       // pending or rejected, and its day has gone
       s.missed++;
@@ -75,7 +81,9 @@ export function summarise(instances, { from, to, today = ymd() } = {}) {
     s.decided = s.approved + s.missed + s.waiting;
     s.rate = s.decided ? (s.approved + s.waiting) / s.decided : null;
     s.perfect = s.decided > 0 && s.missed === 0;
-    s.total = s.decided + s.upcoming;
+    // Excused work is in the total so a fully-excused week reads as "away"
+    // rather than "nothing was ever scheduled".
+    s.total = s.decided + s.upcoming + s.excused;
   }
 
   return byChild;
@@ -84,10 +92,70 @@ export function summarise(instances, { from, to, today = ymd() } = {}) {
 /** Blank figures, so a child with nothing scheduled still renders a card. */
 export function emptySummary() {
   return {
-    approved: 0, missed: 0, waiting: 0, upcoming: 0,
+    approved: 0, missed: 0, waiting: 0, upcoming: 0, excused: 0,
     earnedCents: 0, missedCents: 0, waitingCents: 0,
     decided: 0, rate: null, perfect: false, total: 0,
   };
+}
+
+/**
+ * How many days in a row this child has cleared everything due that day.
+ *
+ * Written for a kid to read, so the rules are the generous, obvious ones:
+ *
+ *   - A day counts only if something was actually due that day. Days with
+ *     nothing scheduled are skipped, not counted and not breaking — a Sunday
+ *     off must not end a streak.
+ *   - Excused days are skipped the same way. Being away is not a failure, and
+ *     a streak that dies because you went to grandma's is exactly the kind of
+ *     unfairness this whole feature exists to prevent.
+ *   - Submitted-but-not-yet-approved counts as done. The child finished their
+ *     part; how fast a parent reviews is not their business.
+ *   - Today is skipped rather than counted against them while it is still
+ *     running, otherwise every streak reads as broken until the evening.
+ *
+ * Only dated chores count. An "anytime this week" chore has no single day to
+ * attach to, so folding it in would break days it was never owed on.
+ */
+export function streakFor(instances, childId, { today = ymd() } = {}) {
+  const byDay = new Map();
+  for (const inst of instances) {
+    if (inst.child_id !== childId || !inst.due_date) continue;
+    if (inst.due_date > today) continue;
+    if (!byDay.has(inst.due_date)) byDay.set(inst.due_date, []);
+    byDay.get(inst.due_date).push(inst);
+  }
+
+  const done = (i) => ['approved', 'submitted'].includes(i.status);
+  const verdict = (items) => {
+    const live = items.filter((i) => i.status !== 'excused');
+    if (!live.length) return 'skip';               // nothing owed, or all excused
+    return live.every(done) ? 'clear' : 'broken';
+  };
+
+  const days = [...byDay.keys()].sort().reverse();  // newest first
+
+  let current = 0;
+  for (const day of days) {
+    const v = verdict(byDay.get(day));
+    if (day === today && v === 'broken') continue;  // still time left today
+    if (v === 'skip') continue;
+    if (v === 'broken') break;
+    current++;
+  }
+
+  // Best run anywhere in the data we were given, oldest to newest.
+  let best = 0;
+  let run = 0;
+  for (const day of [...days].reverse()) {
+    const v = verdict(byDay.get(day));
+    if (v === 'skip') continue;
+    if (v === 'broken') { run = 0; continue; }
+    run++;
+    if (run > best) best = run;
+  }
+
+  return { current, best: Math.max(best, current) };
 }
 
 // ---------------------------------------------------------------------

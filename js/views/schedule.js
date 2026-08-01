@@ -7,7 +7,7 @@
 
 import {
   el, formatMoney, parseMoney, ymd, addDays, weekStartFor, dayOfWeek,
-  formatWeekRange, DAY_INITIAL, DAY_SHORT, uuid,
+  formatWeekRange, formatLongDate, DAY_INITIAL, DAY_SHORT, uuid,
 } from '../util.js';
 import { section, emptyState, openDialog, confirmDialog } from '../ui.js';
 import {
@@ -361,8 +361,134 @@ async function onEditGroup(group) {
 }
 
 // ---------------------------------------------------------------------
+// Away days
+// ---------------------------------------------------------------------
+
+/**
+ * "Ava is at grandma's Friday to Sunday."
+ *
+ * Excusing is the missing third option next to approve and send-back. Without
+ * it the only ways to handle a day a child was never asked about were to
+ * reject the chores — which means "you did this badly" and shows them a note —
+ * or to let the days score as misses, which quietly wrecks the completion rate
+ * the reward mechanic depends on.
+ */
+async function onMarkAway() {
+  const snap = state.snap;
+  const kids = snap.children.filter((c) => c.active);
+  if (!kids.length) return;
+
+  const result = await openDialog({
+    title: 'Mark someone away',
+    confirmLabel: 'Excuse these chores',
+    build: (body) => {
+      const who = el('select', {});
+      for (const c of kids) who.append(el('option', { value: c.id }, `${c.emoji} ${c.name}`));
+
+      const from = el('input', { type: 'date', value: ymd() });
+      const to = el('input', { type: 'date', value: ymd() });
+      const error = el('div', { class: 'pin-error', style: { textAlign: 'left' } });
+
+      body.append(
+        el('p', { class: 'field__hint', style: { marginTop: '0' } },
+          'Chores owed over these days stop counting — they are not marked done, '
+          + 'not paid for, and not held against anyone. Use this for a sleepover, '
+          + 'a sick day, or a week away.'),
+        el('div', { class: 'field' }, el('label', { class: 'field__label' }, 'Who'), who),
+        el('div', { class: 'field-row' },
+          el('div', { class: 'field' }, el('label', { class: 'field__label' }, 'From'), from),
+          el('div', { class: 'field' }, el('label', { class: 'field__label' }, 'To'), to),
+        ),
+        el('p', { class: 'field__hint' },
+          'Anything already approved keeps its money. You can put a day back with Undo below.'),
+        error,
+      );
+
+      return () => {
+        if (!from.value || !to.value) { error.textContent = 'Pick both dates.'; return undefined; }
+        if (to.value < from.value) { error.textContent = 'The end date is before the start date.'; return undefined; }
+        return { childId: who.value, from: from.value, to: to.value };
+      };
+    },
+  });
+  if (!result) return;
+
+  try {
+    const res = await parentAction((token) =>
+      db.excuseRange(token, result.childId, result.from, result.to));
+    const n = res?.excused ?? 0;
+    const name = childById(result.childId)?.name ?? 'They';
+    toast(n
+      ? `${n} chore${n === 1 ? '' : 's'} excused for ${name}`
+      : `Nothing was outstanding for ${name} over those days`, 'good');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+/** Excused spans in the week on screen, so they can be undone. */
+function excusedSection() {
+  const snap = state.snap;
+  const excused = (snap.instances ?? []).filter((i) => i.status === 'excused');
+  if (!excused.length) return null;
+
+  // Group by child, then by the day the chore was owed.
+  const byChild = new Map();
+  for (const inst of excused) {
+    if (!byChild.has(inst.child_id)) byChild.set(inst.child_id, []);
+    byChild.get(inst.child_id).push(inst);
+  }
+
+  const rows = el('div', { class: 'rows' });
+  for (const [childId, items] of byChild) {
+    const child = childById(childId);
+    const days = [...new Set(items.map((i) => i.due_date ?? addDays(snap.weekStart, 6)))].sort();
+    const from = days[0];
+    const to = days[days.length - 1];
+
+    rows.append(
+      el('div', { class: 'row' },
+        el('span', { class: 'chore__emoji', style: { width: '38px', height: '38px', fontSize: '19px' } }, '🌴'),
+        el('span', { class: 'row__body' },
+          el('span', { class: 'row__title', style: { display: 'block' } }, child?.name ?? '—'),
+          el('span', { class: 'row__meta', style: { display: 'block' } },
+            `${items.length} chore${items.length === 1 ? '' : 's'} excused · `
+            + (from === to ? formatLongDate(from) : `${formatLongDate(from)} – ${formatLongDate(to)}`)),
+        ),
+        el('button', {
+          class: 'btn btn--ghost', type: 'button',
+          onclick: async () => {
+            try {
+              const res = await parentAction((token) =>
+                db.unexcuseRange(token, childId, from, to));
+              toast(`${res?.restored ?? 0} chore(s) back on ${child?.name ?? 'their'} list`);
+            } catch (err) { toast(err.message, 'error'); }
+          },
+        }, 'Undo'),
+      ),
+    );
+  }
+
+  return section('Away this week', `${excused.length}`,
+    el('p', { class: 'hint', style: { margin: '0 2px 10px' } },
+      'These chores are not counted for or against anyone. Undo puts them back as not done.'),
+    rows,
+  );
+}
+
+// ---------------------------------------------------------------------
 // Week grid
 // ---------------------------------------------------------------------
+
+/** One chore in a grid cell, marked with where it got to. */
+function miniChore(item) {
+  const MARK = { approved: '✓ ', submitted: '⏳ ', rejected: '↻ ', excused: '🌴 ' };
+  const mark = MARK[item.status] ?? '';
+  return el('span', {
+    class: item.status === 'excused' ? 'mini mini--excused' : 'mini',
+    title: item.status === 'excused' ? `${item.chore_name} — excused` : item.chore_name,
+  }, `${mark}${item.chore_emoji} ${item.chore_name}`);
+}
 
 function weekGrid() {
   const snap = state.snap;
@@ -391,8 +517,7 @@ function weekGrid() {
       const cell = el('td', { class: date === today ? 'is-today' : '' });
       if (!items.length) cell.append(el('span', { class: 'muted', style: { fontSize: '12px' } }, '—'));
       for (const item of items) {
-        const mark = item.status === 'approved' ? '✓ ' : item.status === 'submitted' ? '⏳ ' : item.status === 'rejected' ? '↻ ' : '';
-        cell.append(el('span', { class: 'mini', title: item.chore_name }, `${mark}${item.chore_emoji} ${item.chore_name}`));
+        cell.append(miniChore(item));
       }
       row.append(cell);
     }
@@ -400,10 +525,7 @@ function weekGrid() {
     const anytime = snap.instances.filter((x) => x.child_id === child.id && x.due_date === null);
     const cell = el('td', {});
     if (!anytime.length) cell.append(el('span', { class: 'muted', style: { fontSize: '12px' } }, '—'));
-    for (const item of anytime) {
-      const mark = item.status === 'approved' ? '✓ ' : item.status === 'submitted' ? '⏳ ' : item.status === 'rejected' ? '↻ ' : '';
-      cell.append(el('span', { class: 'mini', title: item.chore_name }, `${mark}${item.chore_emoji} ${item.chore_name}`));
-    }
+    for (const item of anytime) cell.append(miniChore(item));
     row.append(cell);
 
     tbody.append(row);
@@ -446,7 +568,16 @@ export function renderSchedule() {
     );
   }
 
-  wrap.append(section('Planned', null, weekGrid()));
+  wrap.append(section('Planned', null,
+    weekGrid(),
+    el('button', {
+      class: 'btn', type: 'button', style: { marginTop: '12px' },
+      onclick: onMarkAway,
+    }, '🌴 Mark someone away'),
+  ));
+
+  const away = excusedSection();
+  if (away) wrap.append(away);
 
   // ---- chores ----
   const activeChores = snap.chores.filter((c) => c.active);

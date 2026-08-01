@@ -99,6 +99,22 @@ echo "==> two chores sharing a name"
 node "$HERE/duplicate-name.test.mjs"
 
 echo
+echo "==> marking someone away"
+node "$HERE/away.test.mjs"
+
+echo
+echo "==> savings goals"
+node "$HERE/goals.test.mjs"
+
+echo
+echo "==> streaks"
+node "$HERE/streak.test.mjs"
+
+echo
+echo "==> downloading a backup"
+node "$HERE/export.test.mjs"
+
+echo
 echo "==> approval flow"
 node "$HERE/flow.test.mjs"
 

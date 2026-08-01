@@ -24,8 +24,10 @@ begin
     return;
   end if;
 
-  insert into children (name, color, emoji, sort_order)
-  values ('Ava', '#e11d48', '🦊', 1) returning id into v_ava;
+  -- One child with a savings goal and one without, so both states are visible
+  -- straight away and the tests have an example of each.
+  insert into children (name, color, emoji, sort_order, goal_cents, goal_label)
+  values ('Ava', '#e11d48', '🦊', 1, 2500, 'Roller skates') returning id into v_ava;
 
   insert into children (name, color, emoji, sort_order)
   values ('Mia', '#7c3aed', '🐨', 2) returning id into v_mia;

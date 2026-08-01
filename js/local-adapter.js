@@ -27,6 +27,19 @@ const DEFAULT_SETTINGS = {
   parent_session_minutes: 240,
 };
 
+/**
+ * The day a chore is really answerable for: its due date, or for an "anytime
+ * this week" chore the end of its week.
+ *
+ * Same rule as effectiveDate() in stats.js and `coalesce(due_date,
+ * week_start + 6)` in schema.sql — excusing, scoring and start_fresh() all
+ * have to agree on when a chore was owed, or a chore can be excused for a day
+ * the dashboard then marks as missed.
+ */
+function effectiveDate(ci) {
+  return ci.due_date ?? addDays(ci.week_start, 6);
+}
+
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -458,6 +471,72 @@ export class LocalAdapter {
     return { ok: true, approved: count, amount_cents: sum };
   }
 
+  // -------------------------------------------------------------------
+  // excusing — mirrors excuse_chore() / excuse_range()
+  // -------------------------------------------------------------------
+  /** Only work nobody has done. Approved chores were earned and stay earned. */
+  async excuseChore(token, id) {
+    const db = this.#read();
+    this.#requireParent(db, token);
+    const inst = db.chore_instances.find((c) => c.id === id);
+    if (!inst || !['pending', 'rejected'].includes(inst.status)) return { ok: true, noop: true };
+    inst.status = 'excused';
+    inst.reviewed_at = Date.now();
+    inst.review_note = null;
+    this.#commit(db);
+    return { ok: true, status: 'excused' };
+  }
+
+  async unexcuseChore(token, id) {
+    const db = this.#read();
+    this.#requireParent(db, token);
+    const inst = db.chore_instances.find((c) => c.id === id);
+    if (!inst || inst.status !== 'excused') return { ok: true, noop: true };
+    inst.status = 'pending';
+    inst.reviewed_at = null;
+    this.#commit(db);
+    return { ok: true, status: 'pending' };
+  }
+
+  async excuseRange(token, childId, from, to) {
+    const db = this.#read();
+    this.#requireParent(db, token);
+    if (!from || !to) throw new Error('A start and end date are both required.');
+    if (to < from) throw new Error(`The end date (${to}) is before the start date (${from}).`);
+
+    let excused = 0;
+    for (const ci of db.chore_instances) {
+      if (ci.child_id !== childId) continue;
+      if (!['pending', 'rejected'].includes(ci.status)) continue;
+      const day = effectiveDate(ci);
+      if (day < from || day > to) continue;
+      ci.status = 'excused';
+      ci.reviewed_at = Date.now();
+      ci.review_note = null;
+      excused++;
+    }
+    this.#commit(db);
+    return { ok: true, excused, from, to };
+  }
+
+  async unexcuseRange(token, childId, from, to) {
+    const db = this.#read();
+    this.#requireParent(db, token);
+    if (!from || !to) throw new Error('A start and end date are both required.');
+
+    let restored = 0;
+    for (const ci of db.chore_instances) {
+      if (ci.child_id !== childId || ci.status !== 'excused') continue;
+      const day = effectiveDate(ci);
+      if (day < from || day > to) continue;
+      ci.status = 'pending';
+      ci.reviewed_at = null;
+      restored++;
+    }
+    this.#commit(db);
+    return { ok: true, restored };
+  }
+
   /** Mirrors unapprove_chore(): back to not-done, money taken back, no note. */
   async unapproveChore(token, id) {
     const db = this.#read();
@@ -528,13 +607,22 @@ export class LocalAdapter {
     this.#requireParent(db, token);
     const existing = db.children.find((c) => c.id === child.id);
     let id = existing?.id;
-    if (existing) Object.assign(existing, child);
-    else {
+    if (existing) {
+      Object.assign(existing, child);
+      // The editor sends '' to clear a goal, matching what nullif() does to it
+      // on the SQL side. Normalise here so the stored shape is the same in
+      // both modes and an export round-trips.
+      existing.goal_cents = child.goal_cents ? Number(child.goal_cents) : null;
+      if (!existing.goal_cents) existing.goal_label = null;
+      else existing.goal_label = child.goal_label || existing.goal_label || null;
+    } else {
       id = uuid();
       db.children.push({
         id, name: child.name, color: child.color ?? '#6366f1',
         emoji: child.emoji ?? '⭐', sort_order: child.sort_order ?? db.children.length + 1,
         active: child.active ?? true,
+        goal_cents: child.goal_cents ? Number(child.goal_cents) : null,
+        goal_label: child.goal_cents ? (child.goal_label || null) : null,
       });
     }
     this.#commit(db);
@@ -642,16 +730,15 @@ export class LocalAdapter {
       throw new Error(`Cannot start fresh from a future date (${from}). Pick today or earlier.`);
     }
 
-    const effective = (ci) => ci.due_date ?? addDays(ci.week_start, 6);
     const before = db.chore_instances.length;
 
     if (wipeMoney) {
       db.ledger_entries = [];
-      db.chore_instances = db.chore_instances.filter((ci) => effective(ci) >= from);
+      db.chore_instances = db.chore_instances.filter((ci) => effectiveDate(ci) >= from);
     } else {
-      // Approved work and the money it earned survive; only untouched chores go.
+      // Approved and excused work survive; only chores nobody acted on go.
       db.chore_instances = db.chore_instances.filter(
-        (ci) => effective(ci) >= from || !['pending', 'rejected'].includes(ci.status),
+        (ci) => effectiveDate(ci) >= from || !['pending', 'rejected'].includes(ci.status),
       );
     }
 
@@ -667,6 +754,31 @@ export class LocalAdapter {
     this.#commit(db);
   }
 
+  /**
+   * Everything, as plain JSON, for the parent to keep a copy of.
+   *
+   * Deliberately omits parent_pin_hash, pin_attempts and parent_sessions: a
+   * backup that lands in a Downloads folder or an email should not carry the
+   * credential that guards the approvals screen. The Supabase adapter can't
+   * read those at all, so leaving them out here keeps the two exports
+   * identical rather than mode-dependent.
+   */
+  async exportAll() {
+    const db = this.#read();
+    return {
+      exported_at: new Date().toISOString(),
+      source: 'local',
+      schema_version: EXPECTED_SCHEMA_VERSION,
+      household: { id: db.household.id, name: db.household.name, settings: db.household.settings },
+      children: db.children,
+      chores: db.chores,
+      rotation_groups: db.rotation_groups,
+      assignments: db.assignments,
+      chore_instances: db.chore_instances,
+      ledger_entries: db.ledger_entries,
+    };
+  }
+
   // Push isn't available without a server; the UI hides it in local mode.
   async registerPush() { throw new Error('Phone notifications need the Supabase backend.'); }
   async unregisterPush() {}
@@ -680,8 +792,16 @@ function seedDemoData() {
   const today = ymd();
   const ws = weekStartFor(today, 0);
 
-  const ava = { id: uuid(), name: 'Ava', color: '#e11d48', emoji: '🦊', sort_order: 1, active: true };
-  const mia = { id: uuid(), name: 'Mia', color: '#7c3aed', emoji: '🐨', sort_order: 2, active: true };
+  // Ava has a savings goal, Mia doesn't — so both states are visible at a
+  // glance in demo mode, and the tests have one of each to work with.
+  const ava = {
+    id: uuid(), name: 'Ava', color: '#e11d48', emoji: '🦊', sort_order: 1, active: true,
+    goal_cents: 2500, goal_label: 'Roller skates',
+  };
+  const mia = {
+    id: uuid(), name: 'Mia', color: '#7c3aed', emoji: '🐨', sort_order: 2, active: true,
+    goal_cents: null, goal_label: null,
+  };
   db.children.push(ava, mia);
 
   const rot = { id: uuid(), name: 'Ava & Mia', child_ids: [ava.id, mia.id], anchor_week: ws };

@@ -1,8 +1,8 @@
 // Everything a parent can reconfigure without touching code.
 
-import { el, contrastOn, ymd, DAY_NAMES } from '../util.js';
+import { el, contrastOn, parseMoney, ymd, DAY_NAMES } from '../util.js';
 import { section, openDialog, confirmDialog, emptyState } from '../ui.js';
-import { state, settings, parentAction, refresh, toast, exitParent } from '../store.js';
+import { state, settings, currency, parentAction, refresh, toast, exitParent } from '../store.js';
 import { db, isDemo, CONFIG } from '../data.js';
 import { openSetPin } from './pin.js';
 import { pushSupported, pushEnabled, enablePush, disablePush } from '../push.js';
@@ -65,6 +65,14 @@ async function onEditChild(child) {
 
       const error = el('div', { class: 'pin-error', style: { textAlign: 'left' } });
 
+      // What they're saving for. Shows as a progress bar on their own screen —
+      // "most of the way to the roller skates" lands where "$14.25" doesn't.
+      const goalLabel = el('input', { type: 'text', placeholder: 'e.g. Roller skates' });
+      goalLabel.value = child?.goal_label ?? '';
+
+      const goalAmount = el('input', { type: 'text', inputmode: 'decimal', placeholder: '25.00' });
+      goalAmount.value = child?.goal_cents ? (child.goal_cents / 100).toFixed(2) : '';
+
       body.append(
         el('div', { class: 'spread', style: { marginBottom: '16px' } },
           preview,
@@ -73,12 +81,38 @@ async function onEditChild(child) {
         ),
         el('div', { class: 'field' }, el('label', { class: 'field__label' }, 'Colour'), colorRow),
         el('div', { class: 'field' }, el('label', { class: 'field__label' }, 'Avatar'), emojiRow),
+        el('h3', { style: { fontSize: '15px', fontWeight: '750', margin: '20px 0 8px' } }, 'Saving up for'),
+        el('div', { class: 'field-row' },
+          el('div', { class: 'field' },
+            el('label', { class: 'field__label' }, 'What'), goalLabel),
+          el('div', { class: 'field', style: { flex: '0 0 130px' } },
+            el('label', { class: 'field__label' }, `Costs (${currency()})`), goalAmount),
+        ),
+        el('div', { class: 'field__hint', style: { marginTop: '-6px' } },
+          'Leave the amount blank for no goal. Reaching it doesn\'t spend anything — '
+          + 'you still pay out whenever you like.'),
         error,
       );
 
       return () => {
         if (!name.value.trim()) { error.textContent = 'Enter a name.'; return undefined; }
-        return { id: child?.id ?? null, name: name.value.trim(), color, emoji, active: true };
+
+        const goalCents = parseMoney(goalAmount.value);
+        if (goalAmount.value.trim() && (goalCents === null || goalCents <= 0)) {
+          error.textContent = 'Enter what the goal costs, like 25.00 — or leave it blank.';
+          return undefined;
+        }
+
+        return {
+          id: child?.id ?? null,
+          name: name.value.trim(),
+          color,
+          emoji,
+          active: true,
+          // Sent even when empty so clearing a goal actually clears it.
+          goal_cents: goalCents ?? '',
+          goal_label: goalCents ? goalLabel.value.trim() : '',
+        };
       };
     },
   });
@@ -324,6 +358,45 @@ export function renderSettings() {
       }, snap.household?.pin_is_set ? 'Change PIN' : 'Set a PIN'),
       el('button', { class: 'btn btn--ghost', type: 'button', onclick: exitParent }, 'Lock now'),
     ),
+  ));
+
+  // ---- backup ----
+  //
+  // Years of chore history live in exactly one Supabase project with no
+  // backup on the free tier. This is the cheapest possible insurance: one
+  // file, readable without this app, that a parent can put somewhere safe.
+  wrap.append(section('Backup', null,
+    el('p', { class: 'field__hint', style: { marginTop: '0' } },
+      'Downloads every child, chore, schedule, completed chore and money entry '
+      + 'as a single JSON file. Your PIN is not included. Nothing is changed or '
+      + 'deleted — take one whenever you like.'),
+    el('button', {
+      class: 'btn', type: 'button',
+      onclick: async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          const data = await db.exportAll();
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = el('a', {
+            href: url,
+            download: `chore-tracker-${ymd()}.json`,
+          });
+          document.body.append(link);
+          link.click();
+          link.remove();
+          // Revoking immediately can cancel the download in some browsers.
+          setTimeout(() => URL.revokeObjectURL(url), 30000);
+          const count = (data.chore_instances?.length ?? 0) + (data.ledger_entries?.length ?? 0);
+          toast(`Downloaded — ${count} records`, 'good');
+        } catch (err) {
+          toast(err.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      },
+    }, '⬇ Download everything'),
   ));
 
   // ---- fresh start ----

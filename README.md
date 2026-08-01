@@ -8,11 +8,19 @@ their own tablets; nothing earns money until a parent approves it.
 - **You** get an approval queue, and a phone notification when something lands
   in it.
 - **Money** accrues per approved chore into a running balance you pay out when
-  cash actually changes hands.
+  cash actually changes hands. Each kid can have a **savings goal**, shown on
+  their own screen as a progress bar — "most of the way to the roller skates"
+  lands where "$14.25" doesn't.
+- **Days off** can be marked for a sleepover, a sick day or a week at
+  grandma's. Those chores stop counting entirely: not done, not paid for, and
+  never held against anyone.
 - **A dashboard** shows completion rate, missed chores and lifetime earnings
-  over any week or month — for rewarding a perfect run.
+  over any week or month — for rewarding a perfect run. Kids see a **streak**
+  on their own screen, which days away don't break.
 - **Everything is editable in the app** — chores, prices, who does what, which
   days. You should never need to touch the code to change the routine.
+- **Backups** are one button in Settings: the whole history as a JSON file,
+  without your PIN in it.
 
 No build step, no framework, no npm install. It's HTML, CSS and JavaScript.
 
@@ -59,6 +67,13 @@ In the dashboard: **SQL Editor → New query**.
    everything in the app.
 
 Both are safe to re-run.
+
+> **Already running an older version?** Re-run `schema.sql` after pulling any
+> code update. It only ever adds things — your chores, approvals, balances and
+> PIN are untouched — and the parent screen shows a banner telling you plainly
+> when the database is behind the app. The test suite applies it to a
+> previous-version database on every run, so the upgrade path is exercised
+> rather than hoped for.
 
 ### 3. Point the app at it
 
@@ -273,7 +288,7 @@ so you can add them back.
 ## Tests
 
 **Database** — spins up a throwaway local Postgres, applies the real schema, and
-runs 211 assertions across both project configurations. Never touches your
+runs 246 assertions across both project configurations. Never touches your
 Supabase project. Needs `postgresql-16`.
 
 ```bash
@@ -287,8 +302,14 @@ PIN, and `anon` cannot approve, re-price, or read the PIN hash. The local
 cluster grants `anon` the same privileges Supabase does, so those last checks
 exercise row-level security rather than a missing `GRANT`.
 
+The last section applies `schema.sql` to a database built on the *previous*
+version, in a single transaction, the way the Supabase SQL editor does. That
+path can fail on its own: Postgres refuses to use an enum value in the same
+transaction that added it, and a fresh install never exercises it — so the
+failure would pass every other test here and appear only on a live project.
+
 **Browser** — drives the real UI in Chromium, against a demo-mode copy so it
-never touches your data. 184 assertions. Needs Playwright.
+never touches your data. 264 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh
@@ -299,8 +320,12 @@ pay out — plus the parent editors, re-pricing, renaming children, expired
 chores, the dashboard across timeframes, and the PIN lockout. It also pins down
 that the parent's week navigation stays on the parent's screen, that paging
 forward actually shows next week's plan while paging back invents nothing, and
-that two chores sharing a name stay separate. Screenshots land in
-`.test-screenshots/`.
+that two chores sharing a name stay separate.
+
+For the newer features it checks what they must *not* do: marking someone away
+removes those days from the missed count rather than adding to it, a savings
+goal can be cleared once set, a streak survives a day away, and a backup never
+contains the PIN hash. Screenshots land in `.test-screenshots/`.
 
 ---
 

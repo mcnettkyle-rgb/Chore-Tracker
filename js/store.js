@@ -183,6 +183,8 @@ export function dueTodayCount(childId) {
  */
 export function outstanding(childId) {
   const today = ymd();
+  // 'excused' is not in this list, so an excused chore is not something the
+  // child still owes — which is the whole point of excusing it.
   const mine = (state.snap?.instances ?? []).filter(
     (i) => i.child_id === childId
       && ['pending', 'rejected'].includes(i.status)

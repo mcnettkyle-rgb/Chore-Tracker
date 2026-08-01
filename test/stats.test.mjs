@@ -4,7 +4,7 @@
 // chores not yet due can never reach 100%, so a "perfect week" badge would be
 // unachievable — and a badge you can't earn is worse than no badge.
 
-import { summarise, ranges, rangeById, rangeProgress, effectiveDate } from '../js/stats.js';
+import { summarise, streakFor, ranges, rangeById, rangeProgress, effectiveDate } from '../js/stats.js';
 
 let failures = 0;
 const check = (cond, label) => {
@@ -162,6 +162,102 @@ console.log('\n--- range progress ---');
   const done = rangeProgress({ from: '2026-07-19', to: '2026-07-25' }, TODAY);
   check(done.complete === true, 'a finished week reports complete');
   check(rangeProgress({ from: null, to: null }, TODAY) === null, 'all time has no progress');
+}
+
+// ---------------------------------------------------------------------
+// Excused chores. The whole reason the status exists is that it must not move
+// the completion rate in either direction — a child away for three days is
+// neither succeeding nor failing on those days.
+console.log('\n--- excused chores ---');
+{
+  const s = get(summarise([
+    chore('approved', '2026-07-26'),
+    chore('approved', '2026-07-27'),
+    chore('excused',  '2026-07-28'),
+    chore('excused',  '2026-07-29'),
+  ], { ...WEEK, today: TODAY }));
+
+  check(s.excused === 2, 'excused chores are counted separately');
+  check(s.decided === 2, 'they are NOT part of what has been decided');
+  check(s.rate === 1, 'so a week with two days away is still 100%');
+  check(s.perfect === true, 'and still counts as perfect');
+  check(s.missedCents === 0, 'no money is recorded as left on the table');
+  check(s.total === 4, 'but the week still knows about all four chores');
+}
+{
+  // The failure this replaces: without the status, those days were misses.
+  const asMisses = get(summarise([
+    chore('approved', '2026-07-26'),
+    chore('approved', '2026-07-27'),
+    chore('pending',  '2026-07-28'),
+    chore('pending',  '2026-07-29'),
+  ], { ...WEEK, today: '2026-07-30' }));
+  check(asMisses.rate === 0.5,
+    `left as pending the same week scores 50% (got ${asMisses.rate})`);
+}
+{
+  const allAway = get(summarise([
+    chore('excused', '2026-07-27'),
+    chore('excused', '2026-07-28'),
+  ], { ...WEEK, today: TODAY }));
+  check(allAway.rate === null, 'a fully excused week has no rate rather than 0%');
+  check(allAway.perfect === false, 'and claims no perfect badge it did not earn');
+  check(allAway.total === 2, 'it still reads as "away", not "nothing scheduled"');
+}
+
+// ---------------------------------------------------------------------
+console.log('\n--- streaks ---');
+{
+  const day = (d) => `2026-07-${String(d).padStart(2, '0')}`;
+  const on = (d, status) => chore(status, day(d));
+
+  check(streakFor([on(27, 'approved'), on(28, 'approved'), on(29, 'approved')], KID,
+    { today: day(29) }).current === 3, 'three cleared days in a row is a streak of 3');
+
+  check(streakFor([on(27, 'approved'), on(28, 'pending'), on(29, 'approved')], KID,
+    { today: day(29) }).current === 1, 'a missed day breaks it');
+
+  // A day with nothing scheduled must not end a run.
+  check(streakFor([on(26, 'approved'), on(28, 'approved'), on(29, 'approved')], KID,
+    { today: day(29) }).current === 3, 'a day with no chores is skipped, not a break');
+
+  // The unfairness this feature exists to avoid.
+  check(streakFor([on(26, 'approved'), on(27, 'excused'), on(28, 'excused'), on(29, 'approved')], KID,
+    { today: day(29) }).current === 2, 'being away does not break a streak');
+
+  // Waiting on a parent is not the kid's fault.
+  check(streakFor([on(27, 'approved'), on(28, 'submitted'), on(29, 'approved')], KID,
+    { today: day(29) }).current === 3, 'submitted-but-unreviewed counts as done');
+
+  // Today is still running.
+  check(streakFor([on(27, 'approved'), on(28, 'approved'), on(29, 'pending')], KID,
+    { today: day(29) }).current === 2, 'an unfinished today does not break the streak yet');
+
+  check(streakFor([on(29, 'approved')], KID, { today: day(29) }).current === 1,
+    'a single cleared day is a streak of 1');
+
+  // Every chore that day has to be done.
+  check(streakFor([on(28, 'approved'), { ...on(28, 'pending'), id: 'x' }, on(29, 'approved')], KID,
+    { today: day(29) }).current === 1, 'one unfinished chore breaks that day');
+
+  // Best is remembered even after a break.
+  const both = streakFor([
+    on(20, 'approved'), on(21, 'approved'), on(22, 'approved'), on(23, 'approved'),
+    on(24, 'pending'),
+    on(28, 'approved'), on(29, 'approved'),
+  ], KID, { today: day(29) });
+  check(both.current === 2, `current run is 2 (got ${both.current})`);
+  check(both.best === 4, `best run is remembered as 4 (got ${both.best})`);
+
+  // Anytime chores have no day to attach to.
+  check(streakFor([{ ...on(29, 'approved'), due_date: null }], KID, { today: day(29) }).current === 0,
+    'anytime chores are left out of streaks');
+
+  // Another child's chores are not mine.
+  check(streakFor([{ ...on(29, 'pending'), child_id: 'someone-else' }], KID,
+    { today: day(29) }).current === 0, 'only this child\'s chores count');
+
+  check(streakFor([], KID, { today: day(29) }).current === 0, 'no history is a streak of 0');
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL STATS TESTS PASSED');

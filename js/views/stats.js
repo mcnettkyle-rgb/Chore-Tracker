@@ -50,7 +50,11 @@ function childCard(child, s, lifetime, range, progress) {
     el('div', { class: 'spread__grow' },
       el('div', { style: { fontWeight: '750', fontSize: '17px' } }, child.name),
       el('div', { class: 'balance__sub' },
-        s.total === 0 ? 'Nothing scheduled' : `${s.approved + s.waiting} of ${s.decided} done`),
+        s.total === 0 ? 'Nothing scheduled'
+          // A period spent entirely away is not the same as one with nothing
+          // on the schedule, and "0 of 0 done" describes neither.
+          : s.decided === 0 && s.excused > 0 ? 'Away for all of it'
+          : `${s.approved + s.waiting} of ${s.decided} done`),
     ),
     showPerfect
       ? el('span', {
@@ -82,6 +86,15 @@ function childCard(child, s, lifetime, range, progress) {
       el('div', { class: 'figure__value', style: { color: 'var(--ink-faint)' } }, String(s.upcoming)),
       el('div', { class: 'figure__label' }, 'Still to come'),
     ),
+    // Only shown when there is one, so a normal week isn't cluttered by a
+    // column of zeroes — but visible when it matters, because it explains why
+    // the rate is based on fewer chores than the schedule called for.
+    s.excused
+      ? el('div', { class: 'figure' },
+          el('div', { class: 'figure__value', style: { color: 'var(--ink-faint)' } }, String(s.excused)),
+          el('div', { class: 'figure__label' }, 'Away'),
+        )
+      : null,
   );
 
   const missedNote = s.missed
@@ -201,7 +214,8 @@ export function renderStats() {
     el('p', { class: 'hint', style: { marginTop: '18px' } },
       'Completion counts every chore whose day has passed. Anything still ahead of its ',
       'deadline is left out, so a perfect record stays reachable mid-week. Chores waiting ',
-      'in your approval queue count as done — the kid finished their part.'),
+      'in your approval queue count as done — the kid finished their part. Days marked ',
+      'away are left out entirely, counting neither for nor against.'),
   );
 
   return wrap;

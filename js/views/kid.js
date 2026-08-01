@@ -9,10 +9,83 @@ import {
 } from '../util.js';
 import { section, foldedSection, emptyState } from '../ui.js';
 import {
-  state, currentChild, currency, goToPicker, instancesFor, balanceOf,
+  state, setState, currentChild, currency, goToPicker, instancesFor, balanceOf,
   kidAction, toast, isExpired, dueTodayCount, outstandingLabel,
 } from '../store.js';
+import { streakFor } from '../stats.js';
 import { db } from '../data.js';
+
+// A streak needs more than the week on screen, and the snapshot only carries
+// one week. Cached across renders, keyed on dataVersion, so marking a chore
+// done refreshes it but switching sections doesn't refetch. Same shape as the
+// dashboard's cache in views/stats.js.
+const STREAK_DAYS = 60;
+let streakCache = { key: null, data: null, loading: false };
+
+function loadStreak(childId) {
+  const key = `${childId}:${state.dataVersion}`;
+  if (streakCache.key === key || streakCache.loading) return;
+
+  streakCache.loading = true;
+  db.statsFor({ from: addDays(ymd(), -STREAK_DAYS), to: ymd() })
+    .then((data) => {
+      streakCache = { key, data, loading: false };
+      setState({});
+    })
+    .catch(() => { streakCache.loading = false; });   // a missing streak is not worth a toast
+}
+
+/**
+ * "🔥 6 days in a row". Only rendered once there's something to celebrate —
+ * a streak of 0 or 1 shown as a badge reads as a scolding.
+ */
+function streakBadge(childId) {
+  if (!streakCache.data) return null;
+  const { current, best } = streakFor(streakCache.data.instances, childId);
+  if (current < 2) return null;
+
+  const isBest = current >= best;
+  return el('div', { class: 'streak' },
+    el('span', { class: 'streak__flame' }, '🔥'),
+    el('span', {},
+      el('strong', {}, `${current} days in a row`),
+      el('span', { class: 'streak__sub' },
+        isBest ? 'Your best ever!' : `Your best is ${best}`),
+    ),
+  );
+}
+
+/**
+ * Progress towards whatever this child is saving for.
+ *
+ * "You have $14.25" is abstract at 8 and 10. "You're most of the way to the
+ * roller skates" is not. Capped at 100% so reaching the goal reads as a win
+ * rather than an overflowing bar.
+ */
+function goalBar(child, balance) {
+  if (!child.goal_cents || child.goal_cents <= 0) return null;
+
+  const pct = Math.min(100, Math.round((balance / child.goal_cents) * 100));
+  const reached = balance >= child.goal_cents;
+  const left = child.goal_cents - balance;
+  const sym = currency();
+
+  return el('div', { class: `goal${reached ? ' goal--reached' : ''}` },
+    el('div', { class: 'goal__top' },
+      el('span', { class: 'goal__label' },
+        reached ? '🎉 ' : '🎯 ',
+        child.goal_label || 'Saving up'),
+      el('span', { class: 'goal__figures' },
+        `${formatMoney(Math.min(balance, child.goal_cents), sym)} of ${formatMoney(child.goal_cents, sym)}`),
+    ),
+    el('div', { class: 'goal__track' },
+      el('div', { class: 'goal__fill', style: { width: `${pct}%`, background: child.color } })),
+    el('div', { class: 'goal__note' },
+      reached
+        ? "You've saved enough — ask about cashing it in!"
+        : `${formatMoney(left, sym)} to go`),
+  );
+}
 
 /**
  * When this chore is due, in words a kid can act on. Every card gets one —
@@ -44,7 +117,9 @@ function choreCard(inst, { onTap = null, tone = '', weekEnd = null } = {}) {
   const right = el('div', { class: 'chore__right' });
   right.append(el('span', { class: 'chore__value' }, formatMoney(inst.value_cents, sym)));
 
-  if (isMissed) {
+  if (inst.status === 'excused') {
+    right.append(el('span', { class: 'pill pill--muted' }, '🌴 Day off'));
+  } else if (isMissed) {
     right.append(el('span', { class: 'pill pill--muted' }, friendlyDay(inst.due_date)));
   } else if (inst.status === 'submitted') {
     right.append(el('span', { class: 'pill pill--waiting' }, '⏳ Waiting'));
@@ -112,6 +187,8 @@ export function renderKid() {
   const today = ymd();
   const mine = instancesFor(child.id);
 
+  loadStreak(child.id);
+
   // Chores whose window has closed can't be submitted any more, so they must
   // not sit in the to-do list looking tappable.
   const expired   = mine.filter(isExpired);
@@ -121,6 +198,9 @@ export function renderKid() {
   const submitted = live.filter((i) => i.status === 'submitted');
   const approved  = live.filter((i) => i.status === 'approved');
   const pending   = live.filter((i) => i.status === 'pending');
+  // Days a parent said didn't count. Shown, so the week still makes sense, but
+  // folded away and never presented as something left to do.
+  const excused   = live.filter((i) => i.status === 'excused');
 
   // Four buckets, each answering a different question for the kid:
   // what have I let slip, what must happen today, what has all week, what's coming.
@@ -139,7 +219,12 @@ export function renderKid() {
   //
   // The remaining count comes from the same helper the profile picker uses, so
   // the tile and this header always agree.
-  const scheduledToday = mine.filter((i) => i.due_date === today && !isExpired(i));
+  // Excused chores are left out of both halves of the ring. Counting them in
+  // the total would make the day unfinishable; counting them as done would
+  // credit work nobody did. They simply aren't part of today.
+  const scheduledToday = mine.filter(
+    (i) => i.due_date === today && !isExpired(i) && i.status !== 'excused',
+  );
   const totalToday = scheduledToday.length;
   const remainingToday = dueTodayCount(child.id);
   const doneToday = totalToday - remainingToday;
@@ -188,6 +273,16 @@ export function renderKid() {
       ),
     ),
   );
+
+  // ---- saving up, and the streak ----
+  // Both sit directly under the money so the numbers above them mean
+  // something: this is what the earning is FOR, and this is the run they're
+  // trying not to break.
+  const goal = goalBar(child, balanceOf(child.id));
+  if (goal) wrap.append(goal);
+
+  const streak = streakBadge(child.id);
+  if (streak) wrap.append(streak);
 
   // ---- needs another look ----
   if (rejected.length) {
@@ -273,6 +368,17 @@ export function renderKid() {
         ...expired
           .sort((a, b) => a.due_date.localeCompare(b.due_date))
           .map((i) => choreCard(i, { tone: 'expired' })),
+      ),
+    ));
+  }
+
+  // ---- away (folded: explains a gap in the week without nagging) ----
+  if (excused.length) {
+    wrap.append(foldedSection('Days off', `${excused.length}`,
+      el('p', { class: 'hint', style: { margin: '10px 2px' } },
+        "These don't count — you weren't expected to do them."),
+      el('div', { class: 'chores' },
+        ...excused.map((i) => choreCard(i, { tone: 'excused', weekEnd })),
       ),
     ));
   }
