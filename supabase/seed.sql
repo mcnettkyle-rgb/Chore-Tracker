@@ -102,8 +102,10 @@ begin
          (v_chore, v_mia, 'anytime');
 
   -- ---- A one-off bonus chore for this week only ------------------------
-  insert into chores (name, emoji, description, value_cents)
-  values ('Help clean out the garage', '📦', 'Bonus job — big help!', 300)
+  -- is_bonus, so it pays well and costs nothing to skip: no missed count, no
+  -- dent in the completion rate, and it can't break a streak.
+  insert into chores (name, emoji, description, value_cents, is_bonus)
+  values ('Help clean out the garage', '📦', 'Bonus job — big help!', 300, true)
   returning id into v_chore;
   insert into assignments (chore_id, child_id, schedule_type, oneoff_week)
   values (v_chore, v_ava, 'oneoff', week_start_for(current_date));

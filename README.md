@@ -14,9 +14,13 @@ their own tablets; nothing earns money until a parent approves it.
 - **Days off** can be marked for a sleepover, a sick day or a week at
   grandma's. Those chores stop counting entirely: not done, not paid for, and
   never held against anyone.
+- **Bonus jobs** are harder chores worth extra. They pay like anything else
+  when done, and cost nothing when they aren't — no missed count, no dent in
+  the completion rate, and they never break a streak.
 - **A dashboard** shows completion rate, missed chores and lifetime earnings
-  over any week or month — for rewarding a perfect run. Kids see a **streak**
-  on their own screen, which days away don't break.
+  over any week or month — for rewarding a perfect run. Kids see their
+  **streak** on the picker and on their own screen, and neither days away nor
+  skipped bonus jobs break it.
 - **Everything is editable in the app** — chores, prices, who does what, which
   days. You should never need to touch the code to change the routine.
 - **Backups** are one button in Settings: the whole history as a JSON file,
@@ -288,7 +292,7 @@ so you can add them back.
 ## Tests
 
 **Database** — spins up a throwaway local Postgres, applies the real schema, and
-runs 246 assertions across both project configurations. Never touches your
+runs 269 assertions across both project configurations. Never touches your
 Supabase project. Needs `postgresql-16`.
 
 ```bash
@@ -309,7 +313,7 @@ transaction that added it, and a fresh install never exercises it — so the
 failure would pass every other test here and appear only on a live project.
 
 **Browser** — drives the real UI in Chromium, against a demo-mode copy so it
-never touches your data. 264 assertions. Needs Playwright.
+never touches your data. 306 assertions. Needs Playwright.
 
 ```bash
 ./test/run-tests.sh
@@ -324,8 +328,10 @@ that two chores sharing a name stay separate.
 
 For the newer features it checks what they must *not* do: marking someone away
 removes those days from the missed count rather than adding to it, a savings
-goal can be cleared once set, a streak survives a day away, and a backup never
-contains the PIN hash. Screenshots land in `.test-screenshots/`.
+goal can be cleared once set, a streak survives a day away, a skipped bonus job
+moves neither the missed count nor the completion rate while a finished one
+still pays, and a backup never contains the PIN hash. Screenshots land in
+`.test-screenshots/`.
 
 ---
 

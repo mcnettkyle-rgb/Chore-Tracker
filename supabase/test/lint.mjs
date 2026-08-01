@@ -103,5 +103,25 @@ for (const file of FILES) {
   }
 }
 
+// ---- schema.sql and the app must agree on the version number ----
+//
+// The app compares schema_version() against EXPECTED_SCHEMA_VERSION to decide
+// whether to tell the parent their database is behind. Bump one and forget the
+// other and that banner either cries wolf on a perfectly current database, or
+// stays silent on a genuinely stale one — and the second is how a missing
+// function reaches a live project as a raw PostgREST error.
+{
+  const schema = readFileSync(path.join(HERE, '..', 'schema.sql'), 'utf8');
+  const app = readFileSync(path.join(HERE, '..', '..', 'js', 'version.js'), 'utf8');
+
+  const inSql = schema.match(/create or replace function schema_version\(\)[\s\S]*?select\s+(\d+)\s*;/i)?.[1];
+  const inApp = app.match(/EXPECTED_SCHEMA_VERSION\s*=\s*(\d+)/)?.[1];
+
+  check(inSql !== undefined, 'schema.sql declares a schema_version()');
+  check(inApp !== undefined, 'js/version.js declares EXPECTED_SCHEMA_VERSION');
+  check(inSql === inApp,
+    `schema.sql (${inSql}) and js/version.js (${inApp}) agree on the schema version`);
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL SQL LINT CHECKS PASSED');
 process.exit(failures ? 1 : 0);

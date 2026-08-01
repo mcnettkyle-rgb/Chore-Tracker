@@ -248,6 +248,7 @@ export class LocalAdapter {
         value_cents: a.value_cents_override ?? chore.value_cents,
         chore_name: chore.name,
         chore_emoji: chore.emoji,
+        is_bonus: !!chore.is_bonus,
         submitted_at: null,
         reviewed_at: null,
         review_note: null,
@@ -647,6 +648,7 @@ export class LocalAdapter {
         ci.value_cents = existing.value_cents;
         ci.chore_name = existing.name;
         ci.chore_emoji = existing.emoji;
+        ci.is_bonus = !!existing.is_bonus;
       }
     } else {
       id = uuid();
@@ -654,6 +656,7 @@ export class LocalAdapter {
         id, name: chore.name, emoji: chore.emoji ?? '✅',
         description: chore.description ?? '', value_cents: chore.value_cents ?? 50,
         auto_approve: chore.auto_approve ?? false, active: chore.active ?? true,
+        is_bonus: chore.is_bonus ?? false,
       });
     }
     this.#commit(db);
@@ -807,8 +810,8 @@ function seedDemoData() {
   const rot = { id: uuid(), name: 'Ava & Mia', child_ids: [ava.id, mia.id], anchor_week: ws };
   db.rotation_groups.push(rot);
 
-  const chore = (name, emoji, description, value_cents, auto_approve = false) => {
-    const c = { id: uuid(), name, emoji, description, value_cents, auto_approve, active: true };
+  const chore = (name, emoji, description, value_cents, auto_approve = false, is_bonus = false) => {
+    const c = { id: uuid(), name, emoji, description, value_cents, auto_approve, is_bonus, active: true };
     db.chores.push(c);
     return c;
   };
@@ -856,7 +859,8 @@ function seedDemoData() {
   assign(laundry, { child: ava.id, type: 'anytime' });
   assign(laundry, { child: mia.id, type: 'anytime' });
 
-  const garage = chore('Help clean out the garage', '📦', 'Bonus job — big help!', 300);
+  // A bonus job, so demo mode shows one: worth a lot, and free to skip.
+  const garage = chore('Help clean out the garage', '📦', 'Bonus job — big help!', 300, false, true);
   assign(garage, { child: ava.id, type: 'oneoff', week: ws });
 
   return db;

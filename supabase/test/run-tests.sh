@@ -120,6 +120,10 @@ for MODE in permissive strict; do
   echo "==> excusing chores"
   show "$HERE/excuse.test.sql"
 
+  echo
+  echo "==> bonus chores"
+  show "$HERE/bonus.test.sql"
+
   # Last: it deletes history the tests above rely on.
   echo
   echo "==> timezone"

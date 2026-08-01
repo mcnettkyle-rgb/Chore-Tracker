@@ -164,6 +164,9 @@ function choreDialog(chore) {
       const autoApprove = el('input', { type: 'checkbox' });
       autoApprove.checked = !!chore?.auto_approve;
 
+      const isBonus = el('input', { type: 'checkbox' });
+      isBonus.checked = !!chore?.is_bonus;
+
       const emojiRow = el('div', { class: 'days', style: { marginTop: '6px' } });
       for (const e of SUGGESTED_EMOJI) {
         emojiRow.append(el('button', {
@@ -193,6 +196,16 @@ function choreDialog(chore) {
             el('span', { class: 'check__title' }, 'Pay without checking'),
             el('span', { class: 'check__hint' },
               'Skips your approval queue and pays the moment it\'s marked done. For chores you don\'t need to inspect.'),
+          ),
+        ),
+        el('label', { class: 'check' },
+          isBonus,
+          el('span', {},
+            el('span', { class: 'check__title' }, '💎 Bonus job'),
+            el('span', { class: 'check__hint' },
+              'A harder job worth extra. It pays like any other chore when it\'s done, '
+              + 'but skipping it costs nothing — no missed count, no dent in their '
+              + 'completion rate, and it never breaks a streak.'),
           ),
         ),
       );
@@ -248,6 +261,7 @@ function choreDialog(chore) {
             description: description.value.trim(),
             value_cents: cents,
             auto_approve: autoApprove.checked,
+            is_bonus: isBonus.checked,
             active: true,
           },
           assignments,
@@ -484,10 +498,14 @@ function excusedSection() {
 function miniChore(item) {
   const MARK = { approved: '✓ ', submitted: '⏳ ', rejected: '↻ ', excused: '🌴 ' };
   const mark = MARK[item.status] ?? '';
+  const classes = ['mini'];
+  if (item.status === 'excused') classes.push('mini--excused');
+  if (item.is_bonus) classes.push('mini--bonus');
+  const note = item.status === 'excused' ? ' — excused' : item.is_bonus ? ' — bonus, optional' : '';
   return el('span', {
-    class: item.status === 'excused' ? 'mini mini--excused' : 'mini',
-    title: item.status === 'excused' ? `${item.chore_name} — excused` : item.chore_name,
-  }, `${mark}${item.chore_emoji} ${item.chore_name}`);
+    class: classes.join(' '),
+    title: `${item.chore_name}${note}`,
+  }, `${mark}${item.is_bonus ? '💎 ' : ''}${item.chore_emoji} ${item.chore_name}`);
 }
 
 function weekGrid() {
@@ -611,6 +629,7 @@ export function renderSchedule() {
         el('span', { class: 'row__body' },
           el('span', { class: 'row__title', style: { display: 'block' } },
             chore.name,
+            chore.is_bonus ? el('span', { class: 'pill pill--bonus', style: { marginLeft: '8px' } }, '💎 bonus') : null,
             chore.auto_approve ? el('span', { class: 'pill pill--muted', style: { marginLeft: '8px' } }, 'no check') : null,
           ),
           el('span', { class: 'row__meta', style: { display: 'block' } },

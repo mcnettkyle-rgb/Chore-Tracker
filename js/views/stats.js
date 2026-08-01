@@ -95,6 +95,15 @@ function childCard(child, s, lifetime, range, progress) {
           el('div', { class: 'figure__label' }, 'Away'),
         )
       : null,
+    // Shown as "done of offered", because the interesting number is how many
+    // they chose to take on — not a score, since bonus work can't be failed.
+    s.bonus
+      ? el('div', { class: 'figure' },
+          el('div', { class: 'figure__value', style: { color: 'var(--accent)' } },
+            `${s.bonusDone}/${s.bonus}`),
+          el('div', { class: 'figure__label' }, 'Bonus'),
+        )
+      : null,
   );
 
   const missedNote = s.missed
@@ -215,7 +224,9 @@ export function renderStats() {
       'Completion counts every chore whose day has passed. Anything still ahead of its ',
       'deadline is left out, so a perfect record stays reachable mid-week. Chores waiting ',
       'in your approval queue count as done — the kid finished their part. Days marked ',
-      'away are left out entirely, counting neither for nor against.'),
+      'away are left out entirely, counting neither for nor against. So are bonus jobs: ',
+      'the money they earn is counted, but taking one on can\'t raise the rate and ',
+      'skipping one can\'t lower it.'),
   );
 
   return wrap;

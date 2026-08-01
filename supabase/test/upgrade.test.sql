@@ -30,7 +30,11 @@ declare
 begin
   raise notice '--- upgrading a version-6 database ---';
 
-  perform assert(schema_version() = 7, 'schema_version() reports 7 after the upgrade');
+  -- Deliberately a floor, not an exact number: this file would otherwise need
+  -- editing on every release, and the version that actually matters is whether
+  -- schema.sql agrees with js/version.js — which lint.mjs checks statically.
+  perform assert(schema_version() >= 8,
+    'schema_version() reports at least 8 after the upgrade (got ' || schema_version() || ')');
 
   perform assert(
     (select count(*) from pg_enum e

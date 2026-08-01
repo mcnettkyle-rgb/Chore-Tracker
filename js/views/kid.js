@@ -9,39 +9,23 @@ import {
 } from '../util.js';
 import { section, foldedSection, emptyState } from '../ui.js';
 import {
-  state, setState, currentChild, currency, goToPicker, instancesFor, balanceOf,
+  state, currentChild, currency, goToPicker, instancesFor, balanceOf,
   kidAction, toast, isExpired, dueTodayCount, outstandingLabel,
+  ensureStreaks, streakOf,
 } from '../store.js';
-import { streakFor } from '../stats.js';
 import { db } from '../data.js';
-
-// A streak needs more than the week on screen, and the snapshot only carries
-// one week. Cached across renders, keyed on dataVersion, so marking a chore
-// done refreshes it but switching sections doesn't refetch. Same shape as the
-// dashboard's cache in views/stats.js.
-const STREAK_DAYS = 60;
-let streakCache = { key: null, data: null, loading: false };
-
-function loadStreak(childId) {
-  const key = `${childId}:${state.dataVersion}`;
-  if (streakCache.key === key || streakCache.loading) return;
-
-  streakCache.loading = true;
-  db.statsFor({ from: addDays(ymd(), -STREAK_DAYS), to: ymd() })
-    .then((data) => {
-      streakCache = { key, data, loading: false };
-      setState({});
-    })
-    .catch(() => { streakCache.loading = false; });   // a missing streak is not worth a toast
-}
 
 /**
  * "🔥 6 days in a row". Only rendered once there's something to celebrate —
  * a streak of 0 or 1 shown as a badge reads as a scolding.
+ *
+ * The data comes from the store's shared cache, which the picker fills too, so
+ * the tile and this badge cannot show different numbers.
  */
 function streakBadge(childId) {
-  if (!streakCache.data) return null;
-  const { current, best } = streakFor(streakCache.data.instances, childId);
+  const streak = streakOf(childId);
+  if (!streak) return null;
+  const { current, best } = streak;
   if (current < 2) return null;
 
   const isBest = current >= best;
@@ -106,8 +90,9 @@ function choreCard(inst, { onTap = null, tone = '', weekEnd = null } = {}) {
   const sym = currency();
   const today = ymd();
   const isMissed = tone === 'expired';
-  // "LATE" means "you can still do this" — pointless once it's in Missed.
-  const overdue = !isMissed && inst.due_date && inst.due_date < today
+  // "LATE" means "you can still do this" — pointless once it's in Missed, and
+  // wrong on a bonus job, which was never owed on a particular day.
+  const overdue = !isMissed && !inst.is_bonus && inst.due_date && inst.due_date < today
     && ['pending', 'rejected'].includes(inst.status);
 
   const classes = ['chore'];
@@ -125,6 +110,16 @@ function choreCard(inst, { onTap = null, tone = '', weekEnd = null } = {}) {
     right.append(el('span', { class: 'pill pill--waiting' }, '⏳ Waiting'));
   } else if (inst.status === 'approved') {
     right.append(el('span', { class: 'pill pill--done' }, '✓ Earned'));
+  } else if (inst.is_bonus) {
+    if (inst.status === 'rejected') right.append(el('span', { class: 'pill pill--redo' }, '↻ Try again'));
+    right.append(el('span', { class: 'pill pill--bonus' }, '💎 Bonus'));
+    // A bonus job that repeats is several separate chances at the money, one
+    // per day, and they are otherwise indistinguishable — a daily one renders
+    // as seven identical cards. The day says which is which. Deliberately
+    // muted and never "LATE": it identifies, it doesn't chase.
+    if (inst.due_date) {
+      right.append(el('span', { class: 'pill pill--muted' }, friendlyDay(inst.due_date)));
+    }
   } else {
     // Still to do (pending or sent back) — always say when it's due.
     if (inst.status === 'rejected') right.append(el('span', { class: 'pill pill--redo' }, '↻ Try again'));
@@ -187,17 +182,20 @@ export function renderKid() {
   const today = ymd();
   const mine = instancesFor(child.id);
 
-  loadStreak(child.id);
+  ensureStreaks();
 
   // Chores whose window has closed can't be submitted any more, so they must
   // not sit in the to-do list looking tappable.
   const expired   = mine.filter(isExpired);
   const live      = mine.filter((i) => !isExpired(i));
 
-  const rejected  = live.filter((i) => i.status === 'rejected');
+  const rejected  = live.filter((i) => i.status === 'rejected' && !i.is_bonus);
   const submitted = live.filter((i) => i.status === 'submitted');
   const approved  = live.filter((i) => i.status === 'approved');
-  const pending   = live.filter((i) => i.status === 'pending');
+  // Optional extra money. Kept out of every "you still owe this" bucket below
+  // and given its own section, so passing on one is genuinely free.
+  const pending   = live.filter((i) => i.status === 'pending' && !i.is_bonus);
+  const bonus     = live.filter((i) => ['pending', 'rejected'].includes(i.status) && i.is_bonus);
   // Days a parent said didn't count. Shown, so the week still makes sense, but
   // folded away and never presented as something left to do.
   const excused   = live.filter((i) => i.status === 'excused');
@@ -223,7 +221,7 @@ export function renderKid() {
   // the total would make the day unfinishable; counting them as done would
   // credit work nobody did. They simply aren't part of today.
   const scheduledToday = mine.filter(
-    (i) => i.due_date === today && !isExpired(i) && i.status !== 'excused',
+    (i) => i.due_date === today && !isExpired(i) && i.status !== 'excused' && !i.is_bonus,
   );
   const totalToday = scheduledToday.length;
   const remainingToday = dueTodayCount(child.id);
@@ -334,6 +332,27 @@ export function renderKid() {
         ? emptyState('🕐', 'Nothing you can do right now',
             'The ones below ran out of time. New chores appear on their day.')
         : emptyState('🎉', 'All caught up!', 'Nothing left to do right now.'),
+    ));
+  }
+
+  // ---- bonus jobs ----
+  // Deliberately NOT folded away, and placed after the real work rather than
+  // before it. These are meant to be tempting once the actual chores are done,
+  // not a distraction from them — and nothing here is ever counted as owed.
+  if (bonus.length) {
+    const worth = bonus.reduce((sum, i) => sum + i.value_cents, 0);
+    wrap.append(section('Bonus jobs 💎', `${bonus.length} · ${formatMoney(worth, sym)}`,
+      el('p', { class: 'hint', style: { margin: '0 2px 10px' } },
+        'Extra jobs for extra money. Totally up to you — skipping one costs you '
+        + 'nothing and never breaks your streak.'),
+      el('div', { class: 'chores' },
+        // Undated first, then by day: a repeating bonus job is one card per
+        // day, and jumbled dates make seven near-identical rows unreadable.
+        ...bonus
+          .slice()
+          .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''))
+          .map((i) => choreCard(i, { tone: 'bonus', onTap: () => markDone(i), weekEnd })),
+      ),
     ));
   }
 

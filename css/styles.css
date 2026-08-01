@@ -228,6 +228,20 @@ button { font: inherit; color: inherit; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Streak chip on a profile tile. Sits under the "3 to do today" line, so it
+   reads as encouragement rather than another number to worry about. */
+.profile__streak {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  background: var(--bg-sunken);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.profile__streak strong { color: var(--ink); font-weight: 750; }
+
 .profile--parent .profile__avatar { background: var(--bg-sunken); }
 
 /* ---------------------------------------------------------------------
@@ -476,6 +490,7 @@ button { font: inherit; color: inherit; }
 .pill--done    { background: var(--done-bg);    color: var(--done); }
 .pill--redo    { background: var(--redo-bg);    color: var(--redo); }
 .pill--muted   { background: var(--bg-sunken);  color: var(--ink-soft); }
+.pill--bonus   { background: var(--accent-soft); color: var(--accent); }
 
 /* State treatments */
 .chore--submitted { background: var(--waiting-bg); border-color: transparent; }
@@ -506,6 +521,15 @@ button { font: inherit; color: inherit; }
 }
 .chore--excused .chore__name { color: var(--ink-soft); }
 .chore--excused .chore__emoji { filter: grayscale(.55); }
+
+/* Bonus: an invitation, not an obligation. Marked out with the accent colour
+   so it reads as the interesting thing on the screen, never as a warning. */
+.chore--bonus {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: var(--accent-soft);
+}
+.chore--bonus .chore__value { color: var(--accent); font-weight: 800; }
 .chore--expired .chore__name { color: var(--ink-soft); text-decoration: line-through; }
 .chore--expired .chore__value { color: var(--ink-faint); text-decoration: line-through; }
 
@@ -808,6 +832,7 @@ button { font: inherit; color: inherit; }
 }
 
 .mini--excused { color: var(--ink-faint); text-decoration: line-through; }
+.mini--bonus   { color: var(--accent); }
 
 /* ---------------------------------------------------------------------
    Admin lists / rows

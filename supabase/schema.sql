@@ -59,12 +59,13 @@ end $$;
 --   5  unapprove_chore() for undoing an accidental approval
 --   6  history_start_date clamped to today, so it can never hide today's chores
 --   7  'excused' chores (sleepovers, sick days) and savings goals per child
+--   8  bonus chores: extra money, and outside the stats entirely
 -- ---------------------------------------------------------------------
 create or replace function schema_version()
 returns int
 language sql
 immutable
-as $$ select 7; $$;
+as $$ select 8; $$;
 
 -- ---------------------------------------------------------------------
 -- Enums
@@ -164,6 +165,16 @@ create table if not exists chores (
   created_at   timestamptz not null default now()
 );
 
+-- Bonus chores: harder jobs worth extra, which are pure upside.
+--
+-- They pay when done and cost nothing when they aren't: no missed count, no
+-- dent in the completion rate, no broken streak. That asymmetry is the point.
+-- A hard optional job that punishes you for skipping it is not a bonus, it is
+-- just another chore, and kids work that out immediately.
+--
+-- Added in version 8, so this is an ALTER rather than part of the CREATE.
+alter table chores add column if not exists is_bonus boolean not null default false;
+
 -- Chores that alternate between kids week to week.
 create table if not exists rotation_groups (
   id          uuid primary key default gen_random_uuid(),
@@ -218,6 +229,12 @@ create table if not exists chore_instances (
   review_note   text,
   created_at    timestamptz not null default now()
 );
+
+-- Snapshotted from chores.is_bonus at generation time, exactly like
+-- value_cents and chore_name above. Scoring reads the instance, never the
+-- catalog — so turning an existing chore into a bonus (or back) changes what
+-- happens from now on and silently rewrites no history.
+alter table chore_instances add column if not exists is_bonus boolean not null default false;
 
 -- Makes generate_week() idempotent.
 create unique index if not exists chore_instances_dedupe
@@ -587,7 +604,8 @@ begin
     select asg.*,
            c.name        as c_name,
            c.emoji       as c_emoji,
-           c.value_cents as c_value
+           c.value_cents as c_value,
+           c.is_bonus    as c_bonus
       from assignments asg
       join chores c on c.id = asg.chore_id
      where asg.active
@@ -629,10 +647,10 @@ begin
         v_want := v_want || want_key(a.id, v_child, v_due);
         insert into chore_instances
           (assignment_id, chore_id, child_id, week_start, due_date,
-           value_cents, chore_name, chore_emoji)
+           value_cents, chore_name, chore_emoji, is_bonus)
         values
           (a.id, a.chore_id, v_child, v_ws, v_due,
-           v_value, a.c_name, a.c_emoji)
+           v_value, a.c_name, a.c_emoji, a.c_bonus)
         on conflict do nothing;
         v_created := v_created + (case when found then 1 else 0 end);
       end loop;
@@ -642,10 +660,10 @@ begin
       v_want := v_want || want_key(a.id, v_child, null);
       insert into chore_instances
         (assignment_id, chore_id, child_id, week_start, due_date,
-         value_cents, chore_name, chore_emoji)
+         value_cents, chore_name, chore_emoji, is_bonus)
       values
         (a.id, a.chore_id, v_child, v_ws, null,
-         v_value, a.c_name, a.c_emoji)
+         v_value, a.c_name, a.c_emoji, a.c_bonus)
       on conflict do nothing;
       v_created := v_created + (case when found then 1 else 0 end);
 
@@ -654,10 +672,10 @@ begin
       v_want := v_want || want_key(a.id, v_child, null);
       insert into chore_instances
         (assignment_id, chore_id, child_id, week_start, due_date,
-         value_cents, chore_name, chore_emoji)
+         value_cents, chore_name, chore_emoji, is_bonus)
       values
         (a.id, a.chore_id, v_child, v_ws, null,
-         v_value, a.c_name, a.c_emoji)
+         v_value, a.c_name, a.c_emoji, a.c_bonus)
       on conflict do nothing;
       v_created := v_created + (case when found then 1 else 0 end);
     end if;
@@ -1140,13 +1158,14 @@ begin
   v_id := nullif(p_chore->>'id', '')::uuid;
 
   if v_id is null then
-    insert into chores (name, emoji, description, value_cents, auto_approve, active)
+    insert into chores (name, emoji, description, value_cents, auto_approve, active, is_bonus)
     values (p_chore->>'name',
             coalesce(p_chore->>'emoji', '✅'),
             coalesce(p_chore->>'description', ''),
             coalesce((p_chore->>'value_cents')::int, 50),
             coalesce((p_chore->>'auto_approve')::boolean, false),
-            coalesce((p_chore->>'active')::boolean, true))
+            coalesce((p_chore->>'active')::boolean, true),
+            coalesce((p_chore->>'is_bonus')::boolean, false))
     returning id into v_id;
   else
     update chores
@@ -1155,14 +1174,20 @@ begin
            description  = coalesce(p_chore->>'description', description),
            value_cents  = coalesce((p_chore->>'value_cents')::int, value_cents),
            auto_approve = coalesce((p_chore->>'auto_approve')::boolean, auto_approve),
-           active       = coalesce((p_chore->>'active')::boolean, active)
+           active       = coalesce((p_chore->>'active')::boolean, active),
+           is_bonus     = coalesce((p_chore->>'is_bonus')::boolean, is_bonus)
      where id = v_id
     returning value_cents into v_value;
 
+    -- is_bonus rides along with name/emoji/value: changed on work nobody has
+    -- acted on yet, from this week forward, and left alone everywhere else.
+    -- Rewriting finished weeks would move the goalposts on a score already
+    -- shown to a child.
     update chore_instances ci
        set value_cents = v_value,
-           chore_name  = (select name  from chores where id = v_id),
-           chore_emoji = (select emoji from chores where id = v_id)
+           chore_name  = (select name     from chores where id = v_id),
+           chore_emoji = (select emoji    from chores where id = v_id),
+           is_bonus    = (select is_bonus from chores where id = v_id)
       from assignments asg
      where ci.assignment_id = asg.id
        and ci.chore_id = v_id

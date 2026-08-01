@@ -111,6 +111,10 @@ echo "==> streaks"
 node "$HERE/streak.test.mjs"
 
 echo
+echo "==> bonus chores"
+node "$HERE/bonus.test.mjs"
+
+echo
 echo "==> downloading a backup"
 node "$HERE/export.test.mjs"
 

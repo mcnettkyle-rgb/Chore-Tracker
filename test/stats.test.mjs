@@ -206,6 +206,51 @@ console.log('\n--- excused chores ---');
 }
 
 // ---------------------------------------------------------------------
+// Bonus chores are pure upside: they pay when done and cost nothing when they
+// aren't. A hard optional job that punishes you for skipping it is not a
+// bonus, it's just another chore, and kids work that out immediately.
+console.log('\n--- bonus chores ---');
+const bonus = (status, due, value = 500) => chore(status, due, value, { is_bonus: true });
+{
+  // Skipping a bonus job must cost nothing at all.
+  const s = get(summarise([
+    chore('approved', '2026-07-26'),
+    chore('approved', '2026-07-27'),
+    bonus('pending',  '2026-07-28'),   // day gone, never done
+  ], { ...WEEK, today: TODAY }));
+
+  check(s.rate === 1, `an untouched bonus job leaves the rate at 100% (got ${s.rate})`);
+  check(s.missed === 0, 'it is not counted as missed');
+  check(s.missedCents === 0, 'and no money is "left on the table"');
+  check(s.perfect === true, 'a perfect week stays perfect');
+  check(s.decided === 2, 'it never enters what has been decided');
+  check(s.bonus === 1, 'but it is counted as offered');
+  check(s.bonusDone === 0, 'and as not taken');
+}
+{
+  // Doing one pays, but must not inflate the score either — a rate over 100%
+  // would stop meaning anything.
+  const s = get(summarise([
+    chore('approved', '2026-07-26'),
+    chore('pending',  '2026-07-27'),   // a genuine miss
+    bonus('approved', '2026-07-28'),
+  ], { ...WEEK, today: TODAY }));
+
+  check(s.rate === 0.5, `finishing a bonus job does not pad the rate (got ${s.rate})`);
+  check(s.approved === 1, 'it is not counted among the required chores done');
+  check(s.bonusDone === 1, 'it is counted as a bonus taken');
+  check(s.earnedCents === 600, `its money still counts (got ${s.earnedCents})`);
+  check(s.bonusEarnedCents === 500, 'and is attributable as bonus earnings');
+}
+{
+  // A week of nothing but bonus jobs has no rate to report.
+  const s = get(summarise([bonus('pending', '2026-07-27')], { ...WEEK, today: TODAY }));
+  check(s.rate === null, 'a bonus-only week has no rate rather than 0%');
+  check(s.total === 1, 'but it still knows something was offered');
+  check(s.upcoming === 0, 'a bonus job is not "still to come" either');
+}
+
+// ---------------------------------------------------------------------
 console.log('\n--- streaks ---');
 {
   const day = (d) => `2026-07-${String(d).padStart(2, '0')}`;
@@ -258,6 +303,20 @@ console.log('\n--- streaks ---');
     { today: day(29) }).current === 0, 'only this child\'s chores count');
 
   check(streakFor([], KID, { today: day(29) }).current === 0, 'no history is a streak of 0');
+
+  // Passing on a bonus job must never break a run, or bonus work becomes
+  // something to fear rather than reach for.
+  const skipped = { ...on(28, 'pending'), id: 'b1', is_bonus: true };
+  check(streakFor([on(27, 'approved'), skipped, on(28, 'approved'), on(29, 'approved')], KID,
+    { today: day(29) }).current === 3, 'an untouched bonus job does not break a streak');
+
+  // A day with ONLY a bonus job on it is a day off, not a failure.
+  check(streakFor([
+    on(27, 'approved'),
+    { ...on(28, 'pending'), id: 'b2', is_bonus: true },
+    on(29, 'approved'),
+  ], KID, { today: day(29) }).current === 2,
+    'a day holding only an unclaimed bonus job is skipped, not fatal');
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL STATS TESTS PASSED');

@@ -45,12 +45,27 @@ export function summarise(instances, { from, to, today = ymd() } = {}) {
   const byChild = new Map();
   const blank = () => ({
     approved: 0, missed: 0, waiting: 0, upcoming: 0, excused: 0,
+    bonus: 0, bonusDone: 0, bonusEarnedCents: 0,
     earnedCents: 0, missedCents: 0, waitingCents: 0,
   });
 
   for (const inst of inRange) {
     if (!byChild.has(inst.child_id)) byChild.set(inst.child_id, blank());
     const s = byChild.get(inst.child_id);
+
+    // Bonus chores are pure upside, so they leave the rate alone in BOTH
+    // directions: skipping one is not a miss, and doing one does not pad the
+    // percentage either (which would let it exceed 100% and stop meaning
+    // anything). The money is real and counts; the score does not move.
+    if (inst.is_bonus) {
+      s.bonus++;
+      if (inst.status === 'approved') {
+        s.bonusDone++;
+        s.bonusEarnedCents += inst.value_cents;
+        s.earnedCents += inst.value_cents;
+      }
+      continue;
+    }
 
     if (inst.status === 'approved') {
       s.approved++;
@@ -82,8 +97,9 @@ export function summarise(instances, { from, to, today = ymd() } = {}) {
     s.rate = s.decided ? (s.approved + s.waiting) / s.decided : null;
     s.perfect = s.decided > 0 && s.missed === 0;
     // Excused work is in the total so a fully-excused week reads as "away"
-    // rather than "nothing was ever scheduled".
-    s.total = s.decided + s.upcoming + s.excused;
+    // rather than "nothing was ever scheduled". Bonus work is in it for the
+    // same reason — a week of nothing but bonus jobs did have something on it.
+    s.total = s.decided + s.upcoming + s.excused + s.bonus;
   }
 
   return byChild;
@@ -93,6 +109,7 @@ export function summarise(instances, { from, to, today = ymd() } = {}) {
 export function emptySummary() {
   return {
     approved: 0, missed: 0, waiting: 0, upcoming: 0, excused: 0,
+    bonus: 0, bonusDone: 0, bonusEarnedCents: 0,
     earnedCents: 0, missedCents: 0, waitingCents: 0,
     decided: 0, rate: null, perfect: false, total: 0,
   };
@@ -113,6 +130,9 @@ export function emptySummary() {
  *     part; how fast a parent reviews is not their business.
  *   - Today is skipped rather than counted against them while it is still
  *     running, otherwise every streak reads as broken until the evening.
+ *   - Bonus chores are ignored outright. They are optional extra money, and a
+ *     streak that dies because you passed on a hard optional job would make
+ *     bonus work something to fear rather than reach for.
  *
  * Only dated chores count. An "anytime this week" chore has no single day to
  * attach to, so folding it in would break days it was never owed on.
@@ -121,6 +141,7 @@ export function streakFor(instances, childId, { today = ymd() } = {}) {
   const byDay = new Map();
   for (const inst of instances) {
     if (inst.child_id !== childId || !inst.due_date) continue;
+    if (inst.is_bonus) continue;
     if (inst.due_date > today) continue;
     if (!byDay.has(inst.due_date)) byDay.set(inst.due_date, []);
     byDay.get(inst.due_date).push(inst);

@@ -4,7 +4,8 @@
 // five years with nothing installed. Views are plain functions that return DOM.
 
 import { db } from './data.js';
-import { ymd, weekStartFor, daysBetween } from './util.js';
+import { ymd, addDays, weekStartFor, daysBetween } from './util.js';
+import { streakFor } from './stats.js';
 import { EXPECTED_SCHEMA_VERSION } from './version.js';
 
 const PROFILE_KEY = 'chore-tracker-profile';   // remembers whose tablet this is
@@ -185,9 +186,14 @@ export function outstanding(childId) {
   const today = ymd();
   // 'excused' is not in this list, so an excused chore is not something the
   // child still owes — which is the whole point of excusing it.
+  //
+  // Bonus chores are left out too. They are optional extra money, so counting
+  // them here would leave a tile reading "1 to do today" that never clears,
+  // and make "All done 🎉" unreachable for a child who did every real chore.
   const mine = (state.snap?.instances ?? []).filter(
     (i) => i.child_id === childId
       && ['pending', 'rejected'].includes(i.status)
+      && !i.is_bonus
       && !isExpired(i),
   );
 
@@ -227,6 +233,39 @@ export function isExpired(inst) {
   const s = settings();
   if (s.allow_late_submission !== false) return false;
   return daysBetween(inst.due_date, ymd()) > (s.late_grace_days ?? 0);
+}
+
+// ---------------------------------------------------------------------
+// Streaks
+// ---------------------------------------------------------------------
+// A streak needs more history than the one week the snapshot carries, so it
+// gets its own fetch. It lives here rather than in a view because the picker
+// shows every child's streak and the kid screen shows one — and statsFor()
+// already returns every child, so sharing the cache turns two round trips
+// into one and guarantees the two screens can never disagree.
+
+const STREAK_DAYS = 60;
+let streaks = { key: null, instances: null, loading: false };
+
+/** Kick off a fetch if the data is missing or stale. Safe to call from render. */
+export function ensureStreaks() {
+  const key = String(state.dataVersion);
+  if (streaks.key === key || streaks.loading) return;
+
+  streaks.loading = true;
+  db.statsFor({ from: addDays(ymd(), -STREAK_DAYS), to: ymd() })
+    .then((data) => {
+      streaks = { key, instances: data.instances, loading: false };
+      emit();
+    })
+    // A missing streak is a missing decoration, not worth a toast over.
+    .catch(() => { streaks.loading = false; });
+}
+
+/** null until the data arrives, so callers can render nothing rather than 0. */
+export function streakOf(childId) {
+  if (!streaks.instances) return null;
+  return streakFor(streaks.instances, childId);
 }
 
 // ---------------------------------------------------------------------

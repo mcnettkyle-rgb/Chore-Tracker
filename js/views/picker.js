@@ -4,7 +4,10 @@
 
 import { el, formatMoney, contrastOn, ymd } from '../util.js';
 import { emptyState } from '../ui.js';
-import { state, chooseChild, enterParent, currency, toast, refresh, outstandingLabel } from '../store.js';
+import {
+  state, chooseChild, enterParent, currency, toast, refresh,
+  outstandingLabel, ensureStreaks, streakOf,
+} from '../store.js';
 import { db, isDemo } from '../data.js';
 import { openPinPad, openSetPin } from './pin.js';
 
@@ -39,9 +42,30 @@ async function onParentTap() {
   }
 }
 
+/**
+ * "🔥 5 day streak" under a child's name.
+ *
+ * Hidden below two days, for the same reason it is on the kid's own screen: a
+ * badge reading "1 day streak" is not an achievement, and "0" reads as a
+ * telling-off on the first screen anyone sees in the morning.
+ */
+function streakChip(childId) {
+  const streak = streakOf(childId);
+  if (!streak || streak.current < 2) return null;
+  return el('span', { class: 'profile__streak' },
+    '🔥 ',
+    el('strong', {}, String(streak.current)),
+    ' day streak',
+  );
+}
+
 export function renderPicker() {
   const snap = state.snap;
   const wrap = el('div', { class: 'picker' });
+
+  // Fetches once and re-renders when it lands; the kid screen reuses the
+  // same cache, so opening a profile doesn't refetch.
+  ensureStreaks();
 
   wrap.append(
     el('div', {},
@@ -71,6 +95,7 @@ export function renderPicker() {
         }, child.emoji),
         el('span', { class: 'profile__name' }, child.name),
         el('span', { class: 'profile__meta' }, outstandingLabel(child.id, { short: true })),
+        streakChip(child.id),
       ),
     );
   }
